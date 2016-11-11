@@ -1,5 +1,5 @@
-print('passage_entre_obstacle loaded')
-
+print('passage_entre_obstacle loaded') 
+""" dernier edit 11/11/23:45"""
 """ a rajouter : passage a cote d'un obstacle """
 from math import sqrt
 
