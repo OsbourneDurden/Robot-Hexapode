@@ -5,8 +5,9 @@ from math import sqrt
 
 def cmd_trajectoire():
     """liste des fonctions:
-    passage_entre_obstacle , passage_entre_obstacle_direction , repulse1 , repulse2
-    perpendiculaire , norm , fleche , fleche_norm"""
+    passage_entre_obstacle , passage_entre_obstacle_direction , repulse1 , repulse2 ,
+    esquive_obstacle_droite , esquive_obstacle_direction_droite , esquive_obstacle_gauche ,
+    esquive_obstacle_direction_gauche , perpendiculaire , norm , fleche , fleche_norm"""
 
     
 def passage_entre_obstacle(obst_1x,obst_1y,obst_2x,obst_2y,dist_1,dist_2,desti_x,desti_y):
@@ -85,7 +86,7 @@ def passage_entre_obstacle_direction(obst_1x,obst_1y,obst_2x,obst_2y,dist_1,dist
 
 def repulse1(obst_1x,obst_1y):
     """return la liste des points necessaires au calcul de la trajectoire
-    fonction a utiliser uniquement dans les passage_entre_obstacle
+    fonction a utiliser uniquement dans les passage_entre_obstacle et esquive_obstacle
     repulse1 s'occupe de l'obstacle de droite"""
     repulser = []
     vect1= []
@@ -106,7 +107,7 @@ def repulse1(obst_1x,obst_1y):
 
 def repulse2(obst_2x,obst_2y):
     """return la liste des points necessaires au calcul de la trajectoire
-    fonction a utiliser uniquement dans les passage_entre_obstacle
+    fonction a utiliser uniquement dans les passage_entre_obstacle et esquive_obstacle
     repulse2 s'occupe de l'obstacle de gauche"""
     repulser = []
     vect1= []
@@ -127,6 +128,126 @@ def repulse2(obst_2x,obst_2y):
     return repulser
 
 
+def esquive_obstacle_droite(obst_x,obst_y,desti_x,desti_y):
+    """ utilisation : liste1,liste2 = esquive_obstacle_droite(...)
+    avec obst_x et obst_x la position de l'obstacle a eviter
+    avec desti_x et desti_y la position de la destination
+    avec liste1,liste2 les coordonnees  en x (resp y) de la trajectoire"""
+    
+    """cet algo considere que le robot est toujours a la position (0,0) ce qui simplifie les calculs -au moins davatange que ce que coute le changement de base-"""
+    """a est une valeur qui varie entre 0 et 1 probablement le pas dans l algo"""
+    a=0
+    """on peut envisager de changer la valeur ce parametre, a priori 0.01 de base"""
+    pas =0.01
+    trajectx = []
+    trajecty = []
+
+    """ calcul des points repulses """
+
+    repulse_1x,repulse_1y,repulse_2x,repulse_2y=repulse1(obst_x,obst_y)
+
+    """ calcul de la trajectoire """
+    while a<=1:
+        
+        directx=( 3*repulse_1x*a*(1-a)**2 + 3*repulse_2x*a**2*(1-a) + desti_x*a**3 )
+        directy=( 3*repulse_1y*a*(1-a)**2 + 3*repulse_2y*a**2*(1-a) + desti_y*a**3 )
+        trajectx.append(directx)
+        trajecty.append(directy)
+        """a=a+pas /// arrondit degueux qui casse tout"""
+        a=round(a+pas,4)
+    return trajectx , trajecty
+
+    
+def esquive_obstacle_direction_droite(obst_x,obst_y,desti_x,desti_y,direction_x,direction_y):
+    """ utilisation : liste1,liste2 = esquive_obstacle_direction_droite(...)
+    avec obst_x et obst_x la position de l'obstacle a eviter
+    avec desti_x et desti_y la position de la destination et direction la direction initiale
+    avec liste1,liste2 les coordonnees  en x (resp y) de la trajectoire"""
+
+    """cet algo considere que le robot est toujours a la position (0,0) ce qui simplifie les calculs -au moins davatange que ce que coute le changement de base-"""
+    """a est une valeur qui varie entre 0 et 1 probablement le pas dans l algo"""
+    a=0
+    """on peut envisager de changer la valeur ce parametre, a priori 0.01 de base"""
+    pas =0.01
+    trajectx = []
+    trajecty = []
+
+    """ calcul des points repulses """
+
+    repulse_1x,repulse_1y,repulse_2x,repulse_2y=repulse1(obst_x,obst_y)
+
+    """ calcul de la trajectoire """
+    while a<=1:
+        
+        directx=( 4*direction_x*a*(1-a)**3 + 6*repulse_1x*a**2*(1-a)**2 + 4*repulse_2x*a**3*(1-a) + desti_x*a**4 )
+        directy=( 4*direction_y*a*(1-a)**3 + 6*repulse_1y*a**2*(1-a)**2 + 4*repulse_2y*a**3*(1-a) + desti_y*a**4 )
+        trajectx.append(directx)
+        trajecty.append(directy)
+        """a=a+pas /// arrondit degueux qui casse tout"""
+        a=round(a+pas,4)
+    return trajectx , trajecty
+
+
+def esquive_obstacle_gauche(obst_x,obst_y,desti_x,desti_y):
+    """ utilisation : liste1,liste2 = esquive_obstacle_gauche(...)
+    avec obst_x et obst_x la position de l'obstacle a eviter
+    avec desti_x et desti_y la position de la destination
+    avec liste1,liste2 les coordonnees  en x (resp y) de la trajectoire"""
+
+    """cet algo considere que le robot est toujours a la position (0,0) ce qui simplifie les calculs -au moins davatange que ce que coute le changement de base-"""
+    """a est une valeur qui varie entre 0 et 1 probablement le pas dans l algo"""
+    a=0
+    """on peut envisager de changer la valeur ce parametre, a priori 0.01 de base"""
+    pas =0.01
+    trajectx = []
+    trajecty = []
+
+    """ calcul des points repulses """
+
+    repulse_1x,repulse_1y,repulse_2x,repulse_2y=repulse2(obst_x,obst_y)
+
+    """ calcul de la trajectoire """
+    while a<=1:
+        
+        directx=( 3*repulse_1x*a*(1-a)**2 + 3*repulse_2x*a**2*(1-a) + desti_x*a**3 )
+        directy=( 3*repulse_1y*a*(1-a)**2 + 3*repulse_2y*a**2*(1-a) + desti_y*a**3 )
+        trajectx.append(directx)
+        trajecty.append(directy)
+        """a=a+pas /// arrondit degueux qui casse tout"""
+        a=round(a+pas,4)
+    return trajectx , trajecty
+
+    
+def esquive_obstacle_direction_gauche(obst_x,obst_y,desti_x,desti_y,direction_x,direction_y):
+    """ utilisation : liste1,liste2 = esquive_obstacle_direction_gauche(...)
+    avec obst_x et obst_x la position de l'obstacle a eviter
+    avec desti_x et desti_y la position de la destination et direction la direction initiale
+    avec liste1,liste2 les coordonnees  en x (resp y) de la trajectoire"""
+
+    """cet algo considere que le robot est toujours a la position (0,0) ce qui simplifie les calculs -au moins davatange que ce que coute le changement de base-"""
+    """a est une valeur qui varie entre 0 et 1 probablement le pas dans l algo"""
+    a=0
+    """on peut envisager de changer la valeur ce parametre, a priori 0.01 de base"""
+    pas =0.01
+    trajectx = []
+    trajecty = []
+
+    """ calcul des points repulses """
+
+    repulse_1x,repulse_1y,repulse_2x,repulse_2y=repulse2(obst_x,obst_y)
+
+    """ calcul de la trajectoire """
+    while a<=1:
+        
+        directx=( 4*direction_x*a*(1-a)**3 + 6*repulse_1x*a**2*(1-a)**2 + 4*repulse_2x*a**3*(1-a) + desti_x*a**4 )
+        directy=( 4*direction_y*a*(1-a)**3 + 6*repulse_1y*a**2*(1-a)**2 + 4*repulse_2y*a**3*(1-a) + desti_y*a**4 )
+        trajectx.append(directx)
+        trajecty.append(directy)
+        """a=a+pas /// arrondit degueux qui casse tout"""
+        a=round(a+pas,4)
+    return trajectx , trajecty
+
+    
 def perpendiculaire(vect_x,vect_y):
     """calcul d'un vecteur perpendiculaire d'un vecteur donne
     usage : perpen = perpendiculaire(vect_x,vect_y)
@@ -177,6 +298,7 @@ def fleche_norm(trajectx , trajecty):
         i=i+1
     return flechex,flechey
     
-                       
+
+
     
     
