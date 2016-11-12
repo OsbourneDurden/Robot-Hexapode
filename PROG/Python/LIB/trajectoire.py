@@ -1,11 +1,21 @@
-print('passage_entre_obstacle loaded') 
-""" dernier edit 11/11/23:45"""
+print('cmd_passage loaded')
+
 """ a rajouter : passage a cote d'un obstacle """
 from math import sqrt
 
+def cmd_trajectoire():
+    """liste des fonctions:
+    passage_entre_obstacle , passage_entre_obstacle_direction , repulse1 , repulse2
+    perpendiculaire , norm , fleche , fleche_norm"""
+
+    
 def passage_entre_obstacle(obst_1x,obst_1y,obst_2x,obst_2y,dist_1,dist_2,desti_x,desti_y):
     """ utilisation : liste1,liste2 = passage_entre_obstacle(...)
-    obst_1 correspond a l'obstacle de droite et obst_2 a l'obstacle de gauche"""
+    avec obst_1 la position a l'obstacle de droite et obst_2 la position a l'obstacle de gauche
+    avec dist la distance, desti la position de la destination
+    avec liste1,liste2 les coordonnees  en x (resp y) de la trajectoire
+
+    les composantes x,y de la direction sont a definir lorsque le projet avancera davantage."""
 
     """cet algo considere que le robot est toujours a la position (0,0) ce qui simplifie les calculs -au moins davatange que ce que coute le changement de base-"""
     """a est une valeur qui varie entre 0 et 1 probablement le pas dans l algo"""
@@ -20,6 +30,7 @@ def passage_entre_obstacle(obst_1x,obst_1y,obst_2x,obst_2y,dist_1,dist_2,desti_x
     repulse_1x,repulse_1y,repulse_2x,repulse_2y=repulse1(obst_1x,obst_1y)
     repulse_3x,repulse_3y,repulse_4x,repulse_4y=repulse2(obst_2x,obst_2y)
 
+    """ calcul de la trajectoire """
     while a<=1:
         
         direct1x=( 3*repulse_1x*a*(1-a)**2 + 3*repulse_2x*a**2*(1-a) + desti_x*a**3 )
@@ -37,7 +48,10 @@ def passage_entre_obstacle(obst_1x,obst_1y,obst_2x,obst_2y,dist_1,dist_2,desti_x
 
 def passage_entre_obstacle_direction(obst_1x,obst_1y,obst_2x,obst_2y,dist_1,dist_2,desti_x,desti_y,direction_x,direction_y):
     """ utilisation : liste1,liste2 = passage_entre_obstacle(...)
-    obst_1 correspond a l'obstacle de droite et obst_2 a l'obstacle de gauche
+    avec obst_1 la position a l'obstacle de droite et obst_2 la position a l'obstacle de gauche
+    avec dist la distance, desti la position de la destination et direction la direction initiale
+    avec liste1,liste2 les coordonnees  en x (resp y) de la trajectoire
+    
     les composantes x,y de la direction sont a definir lorsque le projet avancera davantage."""
 
     """cet algo considere que le robot est toujours a la position (0,0) ce qui simplifie les calculs -au moins davatange que ce que coute le changement de base-"""
@@ -53,6 +67,7 @@ def passage_entre_obstacle_direction(obst_1x,obst_1y,obst_2x,obst_2y,dist_1,dist
     repulse_1x,repulse_1y,repulse_2x,repulse_2y=repulse1(obst_1x,obst_1y)
     repulse_3x,repulse_3y,repulse_4x,repulse_4y=repulse2(obst_2x,obst_2y)
 
+    """ calcul de la trajectoire """
     while a<=1:
         
         direct1x=( 4*direction_x*a*(1-a)**3 + 6*repulse_1x*a**2*(1-a)**2 + 4*repulse_2x*a**3*(1-a) + desti_x*a**4 )
@@ -70,7 +85,8 @@ def passage_entre_obstacle_direction(obst_1x,obst_1y,obst_2x,obst_2y,dist_1,dist
 
 def repulse1(obst_1x,obst_1y):
     """return la liste des points necessaires au calcul de la trajectoire
-    fonction a utiliser uniquement dans les passage_entre_obstacle"""
+    fonction a utiliser uniquement dans les passage_entre_obstacle
+    repulse1 s'occupe de l'obstacle de droite"""
     repulser = []
     vect1= []
     vect2= []
@@ -90,7 +106,8 @@ def repulse1(obst_1x,obst_1y):
 
 def repulse2(obst_2x,obst_2y):
     """return la liste des points necessaires au calcul de la trajectoire
-    fonction a utiliser uniquement dans les passage_entre_obstacle"""
+    fonction a utiliser uniquement dans les passage_entre_obstacle
+    repulse2 s'occupe de l'obstacle de gauche"""
     repulser = []
     vect1= []
     vect2= []
@@ -111,15 +128,55 @@ def repulse2(obst_2x,obst_2y):
 
 
 def perpendiculaire(vect_x,vect_y):
+    """calcul d'un vecteur perpendiculaire d'un vecteur donne
+    usage : perpen = perpendiculaire(vect_x,vect_y)
+    avec vect_x et vect_y les composantes du vecteur
+    avec perpen le vecteur perpendiculaire au premier (il aura meme norme)"""
     vect = []
     vect.append(-vect_y)
     vect.append(vect_x)
     return vect
     
 def norm(vect_x,vect_y):
-    """ calcul de la norm, a priori inutile ici"""
+    """calcul de la norme d'un vecteur
+    usage : norm = norm(vect_x,vect_y)
+    avec vect_x et vect_y les composantes du vecteur
+    avec norm la valeur de la norme du vecteur"""
     norm = vect_x*vect_x+vect_y*vect_y
     norm = sqrt(norm)
     return norm    
 
+def fleche(trajectx , trajecty):
+    """calcul la direction du mouvement
+    usage : flechex,flechey = fleche_norm(trajectx , trajecty)
+    avec trajectx et trajecty les positions du mouvement
+    avec flechex,flechey les directions entre ces mouvements"""
+    flechex = []
+    flechey = []
+    i=0
+    while i<len(trajectx)-1:
+        
+        flechex.append( trajectx[i+1]-trajectx[i] )
+        flechey.append( trajecty[i+1]-trajecty[i] )
+        i=i+1
+    return flechex,flechey
 
+def fleche_norm(trajectx , trajecty):
+    """calcul la direction du mouvement et la normalise
+    usage : flechex,flechey = fleche_norm(trajectx , trajecty)
+    avec trajectx et trajecty les positions du mouvement
+    avec flechex,flechey les directions entre ces mouvements"""
+    flechex = []
+    flechey = []
+    i=0
+    while i<len(trajectx)-1:
+        
+        norm=norm( trajectx[i+1]-trajectx[i],trajecty[i+1]-trajecty[i] )
+        flechex.append( (trajectx[i+1]-trajectx[i])/float(norm) )
+        flechey.append( (trajecty[i+1]-trajecty[i])/float(norm) )
+        i=i+1
+    return flechex,flechey
+    
+                       
+    
+    
