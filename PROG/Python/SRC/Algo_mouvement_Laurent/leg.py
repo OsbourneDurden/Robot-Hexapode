@@ -1,6 +1,7 @@
 import numpy as np
 import math
 import tools
+import matplotlib.pylab as pyl
 
 # The leg class is defined as something static. We don't consider any movement of the robot in here, thus all input and output will be in its self referential :
 #
@@ -18,9 +19,19 @@ import tools
 #     /                  \        
 #    /____________________\
 
+# Zones are defined this way
+#          ___________________________________________________
+#          |        _________________________________        |
+#          |        |        _______________        |        |
+#          |        |        |             |        |        |    
+# CRITICAL |  NEED  |  ENVY  | TRANQUILITY |  ENVY  |  NEED  | CRITICAL
+#          |        |        |_____________|        |        |    
+#          |        |_______________________________|        |
+#          |_________________________________________________|
+
 
 class Leg:
-    def __init__(self, leg_id, fix_position, side, alpha_data, beta_data, gamma_data, l1, l2, landing, threshold, margin, speed_ratio, up_down_ratio, color):
+    def __init__(self, leg_id, fix_position, side, alpha_data, beta_data, gamma_data, l1, l2, landing, envy, need, speed_ratio, up_down_ratio, color):
         self.alphamin = alpha_data[0]
         self.alphamax = alpha_data[1]
         self.alpharepos = alpha_data[2]
@@ -43,18 +54,24 @@ class Leg:
         self.l2 = l2
 
         self.color = color
-
-        self.ratios = {"margin": margin,
-                       "threshold": threshold,
-                       "landing":landing}
+        
+        self.zone_colors = {"need": 'r',
+                            "envy": 'b',
+                            "landing" : 'g',
+                            "critical" : 'k'}
+        self.ratios = {"need": need,
+                       "envy": envy,
+                       "landing":landing,
+                       "critical": 0}
 
         self.speed_ratio_up_down = speed_ratio
         
         self.h = 0
-        self.feet_position = self.get_position_from_angles(self.angles, init=True)
+        self.relative_feet_position = self.get_position_from_angles(self.angles, init=True)
+        self.absolute_feet_position = []
         self.h_up = self.h*up_down_ratio
         
-        self.R_repos = self.get_extention(self.angles)
+        self.R_repos = self.get_extension(self.angles)
         self.Rmin = np.sqrt(self.l1**2 - (self.h - self.l2*np.cos(self.gammamin))**2) + self.l2*np.sin(self.gammamin)
         self.Rmax = np.sqrt((self.l1+self.l2)**2-self.h**2)
 
@@ -74,14 +91,15 @@ class Leg:
 
         return np.array([x, -y, self.h-h])
 
-    def get_extention(self, angles):
+    def get_extension(self, angles):
         return self.l1*np.cos(angles[1]) + self.l2*np.sin(angles[2])
 
-    def get_angles_from_position(self, position):
-        R = norm(position[:2])
-        z = self.h - position[2]
+    def update_angles_from_position(self):
+# Computes the 3 angles alpha, beta, gamma from the position of the leg in its own referential
+        R = np.linalg.norm(self.relative_feet_position[:2])
+        z = self.h - self.relative_feet_position[2]
         try:
-            alpha = math.asin(position[0]/R)
+            alpha = math.asin(self.relative_feet_position[0]/R)
             theta = math.acos((R**2 + z**2 + self.l1**2 - self.l2**2)
                              /(2 * self.l1 * np.sqrt(R**2 + z**2)))
             theta2 = math.atan(R/z)
@@ -90,27 +108,43 @@ class Leg:
                            /(2 * self.l2 * np.sqrt(R**2 + z**2)))
             phi2 = math.atan(z/R)
             gamma = np.pi/2 - (phi + phi2)
-            return [alpha, beta, gamma]
+            print "Saving angles : {0},{1} et {2} from position {3}".format(alpha, beta, gamma, self.relative_feet_position)
+            self.angles = [alpha, beta, gamma]
+            return None
         except:
-            print "Unable to find angles for leg {0} at position {1}".format(self.leg_id, position)
-            return [None, None, None]
+            print "Unable to find angles for leg {0} at position {1}".format(self.leg_id, self.relative_feet_position)
+            return None
+    
+    def get_leg_absolute_position(self, position, orientation):
+# Function that computes the leg absolute position from the current position of the robot and the relative position of the leg in its own landmark
+# Input:
+#   Robot_object : Structure robot, that gives opsition and orientation in absolute landmark
+        if self.side == 'right':
+            return np.array(position)+tools.rotate(self.fix_position + self.relative_feet_position[0:2], orientation)
+        else:
+            return np.array(position)+tools.rotate(self.fix_position - self.relative_feet_position[0:2], orientation)
 
-    def zone_presence(self, position):
-        R = norm(position[:2])
-        alpha = self.get_angles_from_position(position)[0]
-        
-        if alpha==None:
-            return [False, False, False]
+    def get_leg_relative_position(self, position, orientation):
+# Opposite function to get_leg_absolute_position. Gives relative position of the leg considering its absolute position and the absolute position of the robot
+# Input:
+#   Robot_object : Structure robot, that gives opsition and orientation in absolute landmark
+        if self.side == 'right':
+            return np.array((tools.rotate(self.absolute_feet_position - np.array(position), [orientation[0], -orientation[1]]) - self.fix_position).tolist() + [0.])
+        else:
+            return -np.array((tools.rotate(self.absolute_feet_position - np.array(position), [orientation[0], -orientation[1]]) - self.fix_position).tolist() + [0.])
 
-        Rs = {zone: [self.Rmin + (self.Rmax - self.Rmin)*self.ratios[zone]/2, self.Rmax - (self.Rmax - self.Rmin)*self.ratios[zone]/2] for zone in self.ratios.keys()}
-        alphas = {zone: [self.alphamin + (self.alphamax - self.alphamin)*self.ratios[zone]/2, self.alphamax - (self.alphamax - self.alphamin)*self.ratios[zone]/2] for zone in self.ratios.keys()}
+    def zone_presence(self):
+# Function to check in which zone the leg is or is not. 
+# It returns a dictionnary with a boolean for each zone, being True if the leg is within its boundaries. 
+
+        R = self.get_extension(self.angles)
+        alpha = self.angles[0]
+
         zone_presence = {zone: True for zone in self.ratios.keys()}
         
-        print Rs, alphas
         for zone in zone_presence.keys():
-            if R<Rs[zone][0] or R>Rs[zone][1]:
-                zone_presence[zone] = False
-            if alpha<alphas[zone][0] or alpha>alphas[zone][1]:
+            limits = self.get_min_max_values(zone)
+            if R < limits[0] or R > limits[1] or alpha < limits[2] or alpha > limits[3]:
                 zone_presence[zone] = False
         return zone_presence
 
@@ -135,23 +169,28 @@ class Leg:
         Rmin, Rmax, alphamin, alphamax = self.get_min_max_values(zone_name)
 
         corners = self.get_corners(zone_name)
-        plot([corners[0][0], corners[1][0]], [corners[0][1], corners[1][1]], 'k-')
-        plot([corners[2][0], corners[3][0]], [corners[2][1], corners[3][1]], 'k-')
+        pyl.plot([corners[0][0], corners[1][0]], [corners[0][1], corners[1][1]], self.zone_colors[zone_name]+'-')
+        pyl.plot([corners[2][0], corners[3][0]], [corners[2][1], corners[3][1]], self.zone_colors[zone_name]+'-')
         
         arcs_points = [np.array([Rmin*np.sin(alpha), -Rmin*np.cos(alpha)]) for alpha in np.linspace(alphamin, alphamax, N_points_arcs)]
         for n_point in range(len(arcs_points)-1):
-            plot([arcs_points[n_point][0], arcs_points[n_point+1][0]], [arcs_points[n_point][1], arcs_points[n_point+1][1]], 'k-')
+            pyl.plot([arcs_points[n_point][0], arcs_points[n_point+1][0]], [arcs_points[n_point][1], arcs_points[n_point+1][1]], self.zone_colors[zone_name]+'-')
         arcs_points = [np.array([Rmax*np.sin(alpha), -Rmax*np.cos(alpha)]) for alpha in np.linspace(alphamin, alphamax, N_points_arcs)]
         for n_point in range(len(arcs_points)-1):
-            plot([arcs_points[n_point][0], arcs_points[n_point+1][0]], [arcs_points[n_point][1], arcs_points[n_point+1][1]], 'k-')
+            pyl.plot([arcs_points[n_point][0], arcs_points[n_point+1][0]], [arcs_points[n_point][1], arcs_points[n_point+1][1]], self.zone_colors[zone_name]+'-')
 
-    def get_ratio_distance_from_zone_to_next(self, angles, zone_name):
-        R = self.get_extention(angles)
-        r1, r2, alpha1, alpha2 = self.get_min_max_values(zone_name)
-        return max((R-r1)/(self.Rmin-r1), (R-r2)/(self.Rmax-r2), (angles[0]-a1)/(self.alphamin-a1), (angles[0]-a2)/(self.alphamax-a2))
+    def get_ratio_distance_from_zone_to_next(self, zone_in, zone_out):
+        R = self.get_extension(self.angles)
+        r1, r2, a1, a2 = self.get_min_max_values(zone_out)
+        dmin1 = min (abs(R-r1), abs(r2-R), abs(R*(self.angles[0]-a1)), abs(R*(self.angles[0]-a2)))
+        print "Distance to {0} : {1}".format(zone_out, dmin1)
+        r1, r2, a1, a2 = self.get_min_max_values(zone_in)
+        dmin2 = min (abs(r1-R), abs(R-r2), abs(R*(self.angles[0]-a1)), abs(R*(self.angles[0]-a2)))
+        print "Distance to {0} : {1}".format(zone_in, dmin2)
+        return dmin2/(dmin1 + dmin2)
 
     def create_flight(self, start, arrival, mean_speed):
-        D = norm(np.array(start)-np.array(arrival))
+        D = np.linalg.norm(np.array(start)-np.array(arrival))
         O = [(start[0]+arrival[0])/2, (start[1]+arrival[1])/2, ((D**2)/4-self.h_up**2)/(2*self.h_up)]
         delta = 2*math.atan(D/(2*O[2]))
         L = delta*(self.h_up + O[2])
@@ -168,7 +207,7 @@ class Leg:
         leg_rest_vector = np.array([0., -1])
         F = - self.fix_position + robot_final - robot_current + tools.rotate((self.fix_position + leg_rest_vector*R_repos),
                                                                              final_orientation)
-        if np.dot(leg_rest_vector, (F/norm(F))) >= np.dot(leg_rest_vector, (zone_corners_landing[3]/norm(zone_corners[3]))):
+        if np.dot(leg_rest_vector, (F/np.linalg.norm(F))) >= np.dot(leg_rest_vector, (zone_corners_landing[3]/np.linalg.norm(zone_corners[3]))):
             print "Found direct flight for final position"
             return np.array(F)
         side = None
@@ -198,14 +237,14 @@ class Leg:
                 for tmp in inters:
                     print "Possible landing point from {1} : {0}".format(tmp, start)
                     if entity[0] == 'C':
-                        print "Cosinus is {2} compared to {3}".format(np.dot(leg_rest_vector, (tmp/norm(tmp))), np.dot(leg_rest_vector, (zone_corners[3]/norm(zone_corners[3]))))
-                    if entity[0] == 'S' or np.dot(leg_rest_vector, (tmp-1*np.array(zone_center))/norm(np.array(zone_center)-tmp)) >= np.dot(leg_rest_vector, (zone_corners[3]-np.array(zone_center))/norm(np.array(zone_center)-zone_corners[3])):
+                        print "Cosinus is {2} compared to {3}".format(np.dot(leg_rest_vector, (tmp/np.linalg.norm(tmp))), np.dot(leg_rest_vector, (zone_corners[3]/np.linalg.norm(zone_corners[3]))))
+                    if entity[0] == 'S' or np.dot(leg_rest_vector, (tmp-1*np.array(zone_center))/np.linalg.norm(np.array(zone_center)-tmp)) >= np.dot(leg_rest_vector, (zone_corners[3]-np.array(zone_center))/np.linalg.norm(np.array(zone_center)-zone_corners[3])):
                         inter_kept += [tmp]
                         print "Kept :"
                         print zone_center, tmp, -1*np.array(zone_center)+tmp
             dists = []
             for inter in inter_kept:
-                dists += [norm(inter-np.array(F))]
+                dists += [np.linalg.norm(inter-np.array(F))]
             final_point = inter_kept[dists.index(min(dists))]
             print "Found direct fight for final parallel line"
             print final_point
@@ -213,20 +252,20 @@ class Leg:
         else:
             print "Computing tmp position before final line"
             print "Computing pure rotating movement"
-            C_rot = ['C', np.array(O), norm(np.array(O)-np.array(I))]
+            C_rot = ['C', np.array(O), np.linalg.norm(np.array(O)-np.array(I))]
             intersections = []
             inter_kept = []
             for entity in entities:
                 inters = intersect(C_rot, entity)
                 print "{0} intersection(s) between {1} and {2}".format(len(inters), C_rot, entity)
                 for tmp in inters:
-                    print "Possible landing point : {0} from {1}, cosinus is {2} compared to {3}".format(tmp, I, np.dot(leg_rest_vector, (tmp-np.array(zone_center))/norm(np.array(zone_center)-tmp)), np.dot(leg_rest_vector, (zone_corners[3]-np.array(zone_center))/norm(np.array(zone_center)-zone_corners[3])))
-                    if entity[0] == 'S' or np.dot(leg_rest_vector, tmp/norm(tmp)) >= np.dot(leg_rest_vector, zone_corners[3]/norm(zone_corners[3])):
+                    print "Possible landing point : {0} from {1}, cosinus is {2} compared to {3}".format(tmp, I, np.dot(leg_rest_vector, (tmp-np.array(zone_center))/np.linalg.norm(np.array(zone_center)-tmp)), np.dot(leg_rest_vector, (zone_corners[3]-np.array(zone_center))/np.linalg.norm(np.array(zone_center)-zone_corners[3])))
+                    if entity[0] == 'S' or np.dot(leg_rest_vector, tmp/np.linalg.norm(tmp)) >= np.dot(leg_rest_vector, zone_corners[3]/np.linalg.norm(zone_corners[3])):
                         inter_kept += [tmp]
                         print "Kept :"
             dists = []
             for inter in inter_kept:
-                dists += [norm(inter-np.array(I))]
+                dists += [np.linalg.norm(inter-np.array(I))]
             v1 = inter_kept[dists.index(max(dists))] - np.array(I)
             print "v1 : {0}".format(v1)
             
@@ -238,13 +277,13 @@ class Leg:
                 inters = intersect(S_direct, entity)
                 print "{0} intersection(s) between {1} and {2}".format(len(inters), S_direct, entity)
                 for tmp in inters:
-                    print "Possible landing point : {0} from {1}, cosinus is {2} compared to {3}".format(tmp, I, np.dot(leg_rest_vector, (tmp-np.array(zone_center))/norm(np.array(zone_center)-tmp)), np.dot(leg_rest_vector, (zone_corners[3]-np.array(zone_center))/norm(np.array(zone_center)-zone_corners[3])))
-                    if entity[0] == 'S' or np.dot(leg_rest_vector, tmp-1/norm(tmp)) >= np.dot(leg_rest_vector, zone_corners[3]/norm(zone_corners[3])):
+                    print "Possible landing point : {0} from {1}, cosinus is {2} compared to {3}".format(tmp, I, np.dot(leg_rest_vector, (tmp-np.array(zone_center))/np.lingalg.norm(np.array(zone_center)-tmp)), np.dot(leg_rest_vector, (zone_corners[3]-np.array(zone_center))/np.linalg.norm(np.array(zone_center)-zone_corners[3])))
+                    if entity[0] == 'S' or np.dot(leg_rest_vector, tmp-1/np.linalg.norm(tmp)) >= np.dot(leg_rest_vector, zone_corners[3]/np.linalg.norm(zone_corners[3])):
                         inter_kept += [tmp]
                         print "Kept :"
             dists = []
             for inter in inter_kept:
-                dists += [norm(inter-np.array(F))]
+                dists += [np.linalg.norm(inter-np.array(F))]
             v2 = inter_kept[dists.index(min(dists))] - np.array(I)
             print "v2 : {0}".format(v2)
             
@@ -257,14 +296,14 @@ class Leg:
                 inters = intersect(tmp_line, entity)
                 print "{0} intersection(s) between {1} and {2}".format(len(inters), tmp_line, entity)
                 for tmp in inters:
-                    print "Possible landing point : {0} from {1}, cosinus is {2} compared to {3}".format(tmp, I, np.dot(leg_rest_vector, (tmp-np.array(zone_center))/norm(np.array(zone_center)-tmp)), np.dot(leg_rest_vector, (zone_corners[3]-np.array(zone_center))/norm(np.array(zone_center)-zone_corners[3])))
-                    if entity[0] == 'S' or np.dot(leg_rest_vector, (tmp-1*np.array(zone_center))/norm(np.array(zone_center)-tmp)) >= np.dot(leg_rest_vector, (zone_corners[3]-np.array(zone_center))/norm(np.array(zone_center)-zone_corners[3])):
+                    print "Possible landing point : {0} from {1}, cosinus is {2} compared to {3}".format(tmp, I, np.dot(leg_rest_vector, (tmp-np.array(zone_center))/np.linalg.norm(np.array(zone_center)-tmp)), np.dot(leg_rest_vector, (zone_corners[3]-np.array(zone_center))/np.linalg.norm(np.array(zone_center)-zone_corners[3])))
+                    if entity[0] == 'S' or np.dot(leg_rest_vector, (tmp-1*np.array(zone_center))/np.linalg.norm(np.array(zone_center)-tmp)) >= np.dot(leg_rest_vector, (zone_corners[3]-np.array(zone_center))/np.linalg.norm(np.array(zone_center)-zone_corners[3])):
                         inter_kept += [tmp]
                         print "Kept :"
                         print zone_center, tmp, -1*np.array(zone_center)+tmp
             dists = []
             for inter in inter_kept:
-                dists += [norm(inter-np.array(F))]
+                dists += [np.linalg.norm(inter-np.array(F))]
             print "Arrival point from {0} : {1}".format(I, inter_kept[dists.index(min(dists))])
             ideal_point = inter_kept[dists.index(min(dists))]
                                                             

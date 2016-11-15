@@ -1,4 +1,5 @@
 import math
+import numpy as np
 
 def rotate(vector, new_orientation_vector):
 # Return a rotated vector from a previous one, and a new origin, initially defined by [1, 0]
