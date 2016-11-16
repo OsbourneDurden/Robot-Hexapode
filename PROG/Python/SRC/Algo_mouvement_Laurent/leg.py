@@ -31,7 +31,7 @@ import matplotlib.pylab as pyl
 
 
 class Leg:
-    def __init__(self, leg_id, fix_position, side, alpha_data, beta_data, gamma_data, l1, l2, landing, envy, need, speed_ratio, up_down_ratio, color):
+    def __init__(self, leg_id, fix_position, side, alpha_data, beta_data, gamma_data, l1, l2, landing, envy, need, speed_ratio, up_down_ratio, frm, color):
         self.alphamin = alpha_data[0]
         self.alphamax = alpha_data[1]
         self.alpharepos = alpha_data[2]
@@ -70,7 +70,8 @@ class Leg:
         self.relative_feet_position = self.get_position_from_angles(self.angles, init=True)
         self.absolute_feet_position = []
         self.h_up = self.h*up_down_ratio
-        
+        self.frm = frm
+
         self.R_repos = self.get_extension(self.angles)
         self.Rmin = np.sqrt(self.l1**2 - (self.h - self.l2*np.cos(self.gammamin))**2) + self.l2*np.sin(self.gammamin)
         self.Rmax = np.sqrt((self.l1+self.l2)**2-self.h**2)
@@ -189,7 +190,13 @@ class Leg:
         print "Distance to {0} : {1}".format(zone_in, dmin2)
         return dmin2/(dmin1 + dmin2)
 
-    def create_flight(self, start, arrival, mean_speed):
+    def create_flight(self, arrival_point, N_points):
+# Creates the array of (relative) positions the leg should be at while in the air. 
+# Needs the estimated relative arrival point and the number of points for th flight duration
+# Input :
+#   arrival_point : 3-dimensional np.array vector containing the position of the feet when landed. Most likely the third value is 0 as we can assume the ground is flat
+#   N_points : number of points this flight should contain
+
         D = np.linalg.norm(np.array(start)-np.array(arrival))
         O = [(start[0]+arrival[0])/2, (start[1]+arrival[1])/2, ((D**2)/4-self.h_up**2)/(2*self.h_up)]
         delta = 2*math.atan(D/(2*O[2]))
@@ -202,30 +209,31 @@ class Leg:
         self.flight += [arrival]
         print "Final flight : {0} points for a distance of {1}, from {2} to {3}".format(len(self.flight), D, start, arrival)
 
-    def get_arrival_point(self, start, robot_current, robot_final, final_orientation):
-        zone_corners_landing = self.get_corners("landing")
-        leg_rest_vector = np.array([0., -1])
-        F = - self.fix_position + robot_final - robot_current + tools.rotate((self.fix_position + leg_rest_vector*R_repos),
-                                                                             final_orientation)
-        if np.dot(leg_rest_vector, (F/np.linalg.norm(F))) >= np.dot(leg_rest_vector, (zone_corners_landing[3]/np.linalg.norm(zone_corners[3]))):
-            print "Found direct flight for final position"
-            return np.array(F)
-        side = None
-        for corner in zone_corners:
-            if np.dot(corner-np.array(F), rotate(u, [0, 1])) > 0:
-                if side == None:
-                    side = 1
-                elif side == -1:
-                    side = 0
-                else:
-                    if side == None:
-                        side = -1
-                    elif side == 1:
-                        side = 0
-        entities = [['C', [0., 0.], Rmax-Rdiff*self.ratios["landing"]],
-                    ['C', [0., 0.], Rmin+Rdiff*self.ratios["landing"]],
+    def get_arrival_point(self, final_feet_point, final_orientation, zone_aimed = 'need'):
+
+    # TODO : issue of definitions here : We must take into account the movement of the robot during the flight. While we are moving towards the final line, and while it doesn't come in the zone during it, no pb.
+    # But once it gets in during the flight, we can't only use the relative coordinates. Thus we have to pass into arguments the last coorinates and orientation of the robot at the end of the N_points of "create_flight".
+
+# Computes the landing point of a leg depending of the final point this leg should be on at the very end.
+# Needs the final position of this leg and the final orientation of the robot
+# Input :
+#   final_feet_point : 3-dimensional np.array vector containing the final (relative) position of the feet AT THE END OF THE FLIGHT. Most likely the third value is 0 as we can assume the ground is flat
+#   final_orientation : 2-D vector contaiining the final (relative) orientation of the robot AT THE END OF THE FLIGHT.
+#   zone_aimed : name of the contour the feet is aiming. Landing on 'critical' is *VERY* dangerous, while landing on 'envy' might be very power consuming
+        zone_corners_landing = self.get_corners(zone_aimed)
+        final_line = ['L', final_point, final_orientation] #TODO : final_orientation must be relative ! Create new function to turn it, depending on the leg.side, Robot.orientation and final_orientation
+
+        entities = [['C', [0., 0.], self.get_min_max_values(zone_aimed)[0]],
+                    ['C', [0., 0.], self.get_min_max_values(zone_aimed)[1]],
                     ['S', zone_corners[0], zone_corners[1]],
                     ['S', zone_corners[2], zone_corners[3]]]
+
+        # First we try to intersect the final line with the possible landing zone
+        intersections = []
+        for entity in entities:
+            intersections += [tools.intersect(final_line, entity)]
+        if intersections != []:
+            # If they were intersections, it is possible that the final point is inside this zone.
         if side == 0:
             print "Found final line in zone"
 

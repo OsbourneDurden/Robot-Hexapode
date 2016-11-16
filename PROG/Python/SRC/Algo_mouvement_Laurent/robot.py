@@ -43,7 +43,8 @@ class Robot:
 
         self.srud = srud # Speed ratio up/down (SRUD) defines how fast a leg travels forward when lifted compared to grounded legs. For this model to work, we need rud > N_legs/(N_legs - minimum_legs_down). 
         # It will be mostly constrained by physical capacities of actuators
-        self.udhr = udhr # Height to which each leg has to be lifted when not grounded. Should be interfaced with trajectories generation.
+        self.udhr = udhr # Up/Down Height Ratio. Height to which each leg has to be lifted when not grounded compared to the height of the robot. 
+        # Should be interfaced with trajectories generation.
 
         colors = ['r', 'b', 'y', 'm', 'g', 'c'] # Set of color for display
 
@@ -70,9 +71,10 @@ class Robot:
                               need,
                               srud,
                               udhr,
+                              frm,
                               colors[n_leg])]
 
-    def move(self, final_position, N_points = 500):
+    def move(self, final_position, N_points = 500, rotation_factor = 0.1):
 # Function to move the robot.
 # final_position : Desired position as vector [x,y] in the temporary landmark of the robot
 # N_points : number of points for this move. Probably useless in the end, necessary for the current algorythm
