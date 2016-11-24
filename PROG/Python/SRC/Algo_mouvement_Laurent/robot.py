@@ -2,7 +2,7 @@ from leg import *
 import numpy as np
 
 class Robot:
-    def __init__(self, N_legs = 6, l1 = 1., l2 = 1., l = 0.7, L = 3.7, minimum_legs_down = 4, frm = 0.1, srud = 7., udhr = 0.1):
+    def __init__(self, N_legs = 6, l1 = 1., l2 = 1., l = 0.7, L = 3.7, minimum_legs_down = 4, frm = 0.1, srud = 7., udhr = 0.1, flight_angle = pi/4):
         # All length units here are in arbitrary units. 
         self.N_legs = N_legs # Number of leg in this model
         self.minimum_legs_down = minimum_legs_down # Minimum number of leg on the ground at all times to ensure bearing
@@ -12,13 +12,18 @@ class Robot:
         self.L = L # Length of the body
         self.frm = frm # Rotation/Movement factor. At 0, the  robot rotates on himself then goes forward. At 1, the robot permenently rotates as it translates to the final point
 
-        self.position = [0., 0.] # Initial position. At the initialisation, the robot is at the center of its landmark
-        self.orientation = [1., 0.] # Initial orientation. At the initialisation, the robot is along the x axis
+        self.position = np.array([0., 0.]) # Initial position. At the initialisation, the robot is at the center of its landmark
+        self.orientation = np.array([1., 0.]) # Initial orientation. At the initialisation, the robot is along the x axis
 
         # Variables defining the history of the robot.
         self.history = []
         self.angles_history = []
         self.feet_positions_history = []
+        self.landmark_history = [] # List of landmark changes
+
+        self.history += [self.position]
+        self.current_landmark = [self.position, self.orientation]
+        self.landmark_history += [self.current_landmark]
 
         # Values to define the leg demands zones (see leg.py). Keep the order need < envy (< landing, to be removed).
         # The larger these values, the more safe you are about geetting close to mechanical stops, but the more power consuming this model gets. 
@@ -41,7 +46,7 @@ class Robot:
         gammamin = 0.
         gammarepos = np.pi/8
 
-        self.srud = srud # Speed ratio up/down (SRUD) defines how fast a leg travels forward when lifted compared to grounded legs. For this model to work, we need rud > N_legs/(N_legs - minimum_legs_down). 
+        self.srud = srud # Speed ratio up/down (SRUD) defines how fast a leg travels forward when lifted compared to grounded legs. For this model to work, we need rud > N_legs/(N_legs - minimum_legs_down). False. TODO
         # It will be mostly constrained by physical capacities of actuators
         self.udhr = udhr # Up/Down Height Ratio. Height to which each leg has to be lifted when not grounded compared to the height of the robot. 
         # Should be interfaced with trajectories generation.
@@ -71,23 +76,31 @@ class Robot:
                               need,
                               srud,
                               udhr,
+                              flight_angle,
                               frm,
                               colors[n_leg])]
-
-    def move(self, final_position, N_points = 500, rotation_factor = 0.1):
-# Function to move the robot.
-# final_position : Desired position as vector [x,y] in the temporary landmark of the robot
-# N_points : number of points for this move. Probably useless in the end, necessary for the current algorythm
-# Returns an history of the center positions, feet positions, and angles of each leg.
-
-        final_orientation = np.array([final_position[0]-self.position[0], final_position[1]-self.position[1]])
-        final_orientation /= norm(final_orientation)
-
-        self.history += [self.position]
 
         self.angles_history += [[]]
         for leg in self.Legs:
             self.angles_history[-1] += [leg.angles]
+
+        self.feet_positions_history += [[]]
+        for leg in self.Legs:
+            leg.absolute_feet_position = leg.get_leg_absolute_position(self.position, self.orientation)
+            print leg.absolute_feet_position
+            self.feet_positions_history[-1] += [leg.absolute_feet_position]
+
+
+    def move(self, final_position, N_points = 500, rotation_factor = 0.1):
+        '''
+        Function to move the robot.
+        final_position : Desired position as vector [x,y] in the temporary landmark of the robot
+        N_points : number of points for this move. Probably useless in the end, necessary for the current algorythm
+        Returns an history of the center positions, feet positions, and angles of each leg.
+        '''
+        final_position = np.array(final_position)
+        final_orientation = final_position-self.position
+        final_orientation /= norm(final_orientation)
 
         points_center = [0,0]
         points_center[0] = np.linspace(self.position[0], final_position[0], N_points)
@@ -100,11 +113,6 @@ class Robot:
         orientation[0] = np.array(orientation_x.tolist() + [final_orientation[0] for i in range(N_points - len(orientation_x))])
         orientation[1] = np.array(orientation_y.tolist() + [final_orientation[1] for i in range(N_points - len(orientation_y))])
 
-        self.feet_positions_history += [[]]
-        for leg in self.Legs:
-            leg.absolute_feet_position = leg.get_leg_absolute_position(self.position, self.orientation)
-            print leg.absolute_feet_position
-            self.feet_positions_history[-1] += [leg.absolute_feet_position]
 
         final_feet_positions =[]
         for leg in self.Legs:
@@ -123,6 +131,7 @@ class Robot:
             # Update position for this cycle and save it
             self.position = np.array([points_center[0][time], points_center[1][time]])
             self.history += [self.position]
+            self.landmark_history += [self.current_landmark]
 
             demands = []
 
@@ -148,7 +157,24 @@ class Robot:
                     else:
                         print "Unknown leg_zones status. Probable definition issue"
                         sys.exit('Error 5249632')
+                
                 elif leg.status == 'up': # If the leg is currently moving in the air, towards a designed position.
-                    leg.relative_feet_position = leg.flight
-                    self.angles_history[-1] += [leg.angles]
-                    hist_angles[-1] += [get_angles(flight_positions[n_leg][t-t_origin[n_leg]][:2], n_leg/3, np.array([points_center_x[t], points_center_y[t]])+rotate(np.array(legs_fix[n_leg]), [orientation_x[t], orientation_y[t]]), [orientation_x[t], orientation_y[t]], flight_positions[n_leg][t-t_origin[n_leg]][2])]
+                    leg.relative_feet_position = leg.flight[t - leg.t_takeoff] # We update the new position from the predifined flight
+                    leg.update_angles_from_position() # Update the leg angles from this position
+
+                    self.angles_history[-1] += [leg.angles] 
+                    demands += [None]
+
+                elif leg.status == 'end': # If the leg reached its final position. Basically here we only do data saving
+                    leg.relative_feet_position = leg.get_leg_relative_position(self.position, self.orientation)
+                    leg.update_angles_from_position()
+                    self.angles_history[-1] += [leg.angles] 
+                    self.feet_positions_history[-1] += [leg.absolute_feet_position]
+
+                    demands += [None]
+                else:
+                    print "Unknown status for leg {0} : {1}".format(leg.leg_id, leg.status)
+
+            # Now, all legs positions have been updated. We now check the demands of each leg, and update the statuses
+
+

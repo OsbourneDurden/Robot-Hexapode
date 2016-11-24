@@ -4,12 +4,13 @@ import tools
 import matplotlib.pylab as pyl
 
 # The leg class is defined as something static. We don't consider any movement of the robot in here, thus all input and output will be in its self referential :
+# The landmark is located of the fix_position of the leg. Thus, if the feet if on the ground, the z position is most likely negative.
 #
 #           [0., 0.]    y
 #               o       ^
 #                       |
 #                       |
-#                       ----> x
+#                     Z O----> x
 #
 #          __________
 #         /          \
@@ -31,7 +32,7 @@ import matplotlib.pylab as pyl
 
 
 class Leg:
-    def __init__(self, leg_id, fix_position, side, alpha_data, beta_data, gamma_data, l1, l2, landing, envy, need, speed_ratio, up_down_ratio, frm, color):
+    def __init__(self, leg_id, fix_position, side, alpha_data, beta_data, gamma_data, l1, l2, landing, envy, need, speed_ratio, up_down_ratio, flight_angle, frm, color):
         self.alphamin = alpha_data[0]
         self.alphamax = alpha_data[1]
         self.alpharepos = alpha_data[2]
@@ -66,10 +67,11 @@ class Leg:
 
         self.speed_ratio_up_down = speed_ratio
         
-        self.h = 0
+        self.h = 0 # Actually set next line
         self.relative_feet_position = self.get_position_from_angles(self.angles, init=True)
-        self.absolute_feet_position = []
+        self.absolute_feet_position = None
         self.h_up = self.h*up_down_ratio
+        self.flight_angle = flight_angle
         self.frm = frm
 
         self.R_repos = self.get_extension(self.angles)
@@ -78,6 +80,7 @@ class Leg:
 
         self.t_origin = None
         self.flight = None
+        self.t_takeoff = 0
         self.status = 'down'
         self.demand = None
 
@@ -90,7 +93,7 @@ class Leg:
         if init:
             self.h = h
 
-        return np.array([x, -y, self.h-h])
+        return np.array([x, -y, -self.h])
 
     def get_extension(self, angles):
         return self.l1*np.cos(angles[1]) + self.l2*np.sin(angles[2])
@@ -98,7 +101,7 @@ class Leg:
     def update_angles_from_position(self):
 # Computes the 3 angles alpha, beta, gamma from the position of the leg in its own referential
         R = np.linalg.norm(self.relative_feet_position[:2])
-        z = self.h - self.relative_feet_position[2]
+        z = -self.relative_feet_position[2]
         try:
             alpha = math.asin(self.relative_feet_position[0]/R)
             theta = math.acos((R**2 + z**2 + self.l1**2 - self.l2**2)
@@ -126,13 +129,16 @@ class Leg:
             return np.array(position)+tools.rotate(self.fix_position - self.relative_feet_position[0:2], orientation)
 
     def get_leg_relative_position(self, position, orientation):
+        print position
+        print orientation
+        print self.absolute_feet_position
 # Opposite function to get_leg_absolute_position. Gives relative position of the leg considering its absolute position and the absolute position of the robot
 # Input:
 #   Robot_object : Structure robot, that gives opsition and orientation in absolute landmark
         if self.side == 'right':
-            return np.array((tools.rotate(self.absolute_feet_position - np.array(position), [orientation[0], -orientation[1]]) - self.fix_position).tolist() + [0.])
+            return np.array((tools.rotate(self.absolute_feet_position - position, [orientation[0], -orientation[1]]) - self.fix_position).tolist() + [0.])
         else:
-            return -np.array((tools.rotate(self.absolute_feet_position - np.array(position), [orientation[0], -orientation[1]]) - self.fix_position).tolist() + [0.])
+            return -np.array((tools.rotate(self.absolute_feet_position - position, [orientation[0], -orientation[1]]) - self.fix_position).tolist() + [0.])
 
     def zone_presence(self):
 # Function to check in which zone the leg is or is not. 
@@ -165,6 +171,18 @@ class Leg:
                 np.array([Rmax*np.sin(alphamax), -Rmax*np.cos(alphamax)]),
                 np.array([Rmin*np.sin(alphamax), -Rmin*np.cos(alphamax)])]
 
+    def plot_line(self, point, vector, length=10):
+        '''Plots a line of total length 'length' centered in point, with a direction 'vector'
+        
+        Input :
+            - point : 2D np.array
+            - vector : 2D np.array
+            - length : scalar
+        '''
+        x = [point[0] - length/2*vector[0], point[0] + length/2*vector[0]]
+        y = [point[1] - length/2*vector[1], point[1] + length/2*vector[1]]
+        pyl.plot(x, y, '-')
+
     def plot_zone(self, zone_name):
         N_points_arcs = 10
         Rmin, Rmax, alphamin, alphamax = self.get_min_max_values(zone_name)
@@ -190,12 +208,23 @@ class Leg:
         print "Distance to {0} : {1}".format(zone_in, dmin2)
         return dmin2/(dmin1 + dmin2)
 
-    def create_flight(self, arrival_point, N_points):
-# Creates the array of (relative) positions the leg should be at while in the air. 
-# Needs the estimated relative arrival point and the number of points for th flight duration
-# Input :
-#   arrival_point : 3-dimensional np.array vector containing the position of the feet when landed. Most likely the third value is 0 as we can assume the ground is flat
-#   N_points : number of points this flight should contain
+    def create_flight(self, final_feet_point, final_orientation, N_points):
+        '''Creates the array of (relative) positions the leg should be at while in the air. 
+        
+        Needs the estimated relative arrival point and the number of points for the flight duration.
+        Also, we assume that the leg will land in z = 0. Possible necessary modifications about plannification
+        Input :
+            final_feet_point : 3-dimensional np.array vector containing the relative position of the feet when the move is over AT THE END OF THE FLIGHT. Most likely the third value is 0 as we can assume the ground is flat
+            final_orientation : 2-D vector containing the final (relative) orientation of the robot AT THE END OF THE FLIGHT.
+            N_points : number of points this flight should contain'''
+        
+        # First we look for the point to be aimed.
+        point_aimed = self.get_arrival_point(final_feet_point, final_orientation)
+       
+        # Now we see if we have to add a line between the two partial circles or if a continous circle works.
+        D_aimed = (self.h_up * (2 - (points_aimed[2] - self.relative_feet_position[2]))) * (np.sin(self.flight_angle)/(1-np.cos(self.flight_angle)))
+        if D_aimed >= np.linalg.norm(point_aimed[:2] - self.relative_feet_position[:2]) : # If this distance is too big, it means that fliying up to h_up is useless, thus we have to reduce the height reached
+            h_aimed = 
 
         D = np.linalg.norm(np.array(start)-np.array(arrival))
         O = [(start[0]+arrival[0])/2, (start[1]+arrival[1])/2, ((D**2)/4-self.h_up**2)/(2*self.h_up)]
@@ -209,21 +238,40 @@ class Leg:
         self.flight += [arrival]
         print "Final flight : {0} points for a distance of {1}, from {2} to {3}".format(len(self.flight), D, start, arrival)
 
+    def is_point_in_zone(self, point, zone_aimed):
+        '''Checks if a point is inside the zone_aimed.
+
+        Needs the position of the point
+        Input :
+            point : 3-dimensional np.array vector containing the (relative) position of this point. The third value is irrelevant.
+            zone_aimed : name of the contour the function is checking'''
+
+        point_2D = np.array(point[0:2])
+        R = np.linalg.norm(point_2D)
+        zone_limits = self.get_min_max_values(zone_aimed)
+        if zone_limits[0] <= R <= zone_limits[1] and zone_limits[2] <= np.arctan(point_2D[1]/-point_2D[0]) <= zone_limits[3]:
+            return True
+        else:
+            return False
+
     def get_arrival_point(self, final_feet_point, final_orientation, zone_aimed = 'need'):
+        '''Computes the landing point of a leg depending of the final point this leg should be on at the very end.
+        Needs the final position of this leg and the final orientation of the robot
+        Input :
+            final_feet_point : 3-dimensional np.array vector containing the relative position of the feet when the move is over AT THE END OF THE FLIGHT. Most likely the third value is 0 as we can assume the ground is flat
+            final_orientation : 2-D vector containing the final (relative) orientation of the robot AT THE END OF THE FLIGHT.
+            zone_aimed : name of the contour the feet is aiming. Landing on 'critical' is *VERY* dangerous, while landing on 'envy' might be very power consuming'''
 
-    # TODO : issue of definitions here : We must take into account the movement of the robot during the flight. While we are moving towards the final line, and while it doesn't come in the zone during it, no pb.
-    # But once it gets in during the flight, we can't only use the relative coordinates. Thus we have to pass into arguments the last coorinates and orientation of the robot at the end of the N_points of "create_flight".
+        # TODO : issue of definitions here : We must take into account the movement of the robot during the flight. While we are moving towards the final line, and while it doesn't come in the zone during it, no pb.
+        # But once it gets in during the flight, we can't only use the relative coordinates. Thus we have to pass into arguments the last coorinates and orientation of the robot at the end of the N_points of "create_flight".
 
-# Computes the landing point of a leg depending of the final point this leg should be on at the very end.
-# Needs the final position of this leg and the final orientation of the robot
-# Input :
-#   final_feet_point : 3-dimensional np.array vector containing the final (relative) position of the feet AT THE END OF THE FLIGHT. Most likely the third value is 0 as we can assume the ground is flat
-#   final_orientation : 2-D vector contaiining the final (relative) orientation of the robot AT THE END OF THE FLIGHT.
-#   zone_aimed : name of the contour the feet is aiming. Landing on 'critical' is *VERY* dangerous, while landing on 'envy' might be very power consuming
-        zone_corners_landing = self.get_corners(zone_aimed)
-        final_line = ['L', final_point, final_orientation] #TODO : final_orientation must be relative ! Create new function to turn it, depending on the leg.side, Robot.orientation and final_orientation
+        final_feet_point = final_feet_point[0:2]
+        zone_corners = self.get_corners(zone_aimed)
+        zone_limits = self.get_min_max_values(zone_aimed)
+        final_line = ['L', final_feet_point, final_orientation] #TODO : final_orientation must be relative ! Create new function to turn it, depending on the leg.side, Robot.orientation and final_orientation
 
-        entities = [['C', [0., 0.], self.get_min_max_values(zone_aimed)[0]],
+        # entities = [['C', [0., 0.], self.get_min_max_values(zone_aimed)[0]], OLD, segment in interior makes zone convex
+        entities = [['S', zone_corners[0], zone_corners[3]],
                     ['C', [0., 0.], self.get_min_max_values(zone_aimed)[1]],
                     ['S', zone_corners[0], zone_corners[1]],
                     ['S', zone_corners[2], zone_corners[3]]]
@@ -231,89 +279,48 @@ class Leg:
         # First we try to intersect the final line with the possible landing zone
         intersections = []
         for entity in entities:
-            intersections += [tools.intersect(final_line, entity)]
+            print "Intersecting {0} and {1} for leg {2}".format(final_line, entity, self.leg_id)
+            intersections_tmp = [[tools.intersect(final_line, entity), entity[0]]]
+            for intersection_tmp in intersections_tmp:
+                print "Tmp intersection found : {0}".format(intersection_tmp)
+                for intersection in intersection_tmp[0]:
+                    print "Considering {0} with constrains {1}".format(intersection, zone_limits)
+                    if intersection_tmp[1] == 'S' or (zone_limits[2] <= np.arctan(intersection[0]/-intersection[1]) <= zone_limits[3] and intersection[1] < 0):
+                        intersections += [intersection]
+
         if intersections != []:
             # If they were intersections, it is possible that the final point is inside this zone.
-        if side == 0:
-            print "Found final line in zone"
-
-            final_line = ['L', F, u]
-            inter_kept = []
-            for entity in entities:
-                inters = tools.intersect(final_line, entity)
-                print "{0} intersection(s) between {1} and {2}".format(len(inters), final_line, entity)
-                for tmp in inters:
-                    print "Possible landing point from {1} : {0}".format(tmp, start)
-                    if entity[0] == 'C':
-                        print "Cosinus is {2} compared to {3}".format(np.dot(leg_rest_vector, (tmp/np.linalg.norm(tmp))), np.dot(leg_rest_vector, (zone_corners[3]/np.linalg.norm(zone_corners[3]))))
-                    if entity[0] == 'S' or np.dot(leg_rest_vector, (tmp-1*np.array(zone_center))/np.linalg.norm(np.array(zone_center)-tmp)) >= np.dot(leg_rest_vector, (zone_corners[3]-np.array(zone_center))/np.linalg.norm(np.array(zone_center)-zone_corners[3])):
-                        inter_kept += [tmp]
-                        print "Kept :"
-                        print zone_center, tmp, -1*np.array(zone_center)+tmp
-            dists = []
-            for inter in inter_kept:
-                dists += [np.linalg.norm(inter-np.array(F))]
-            final_point = inter_kept[dists.index(min(dists))]
-            print "Found direct fight for final parallel line"
-            print final_point
-            return final_point
+            print "Final line found intersecting"
+            if self.is_point_in_zone(final_feet_point, zone_aimed):
+                # If this point iss indeed within the boundaries, we do aim for it
+                # TODO : In this case, we should reduce the number of points necessary !
+                print "Found final point in zone. Aiming {0}".format(final_feet_point)
+                return np.array(final_feet_point.tolist() + [-self.h])
+            else:
+                # If it is not, we aim for the closest point to this final point that intersect zone_aimed
+                norms=[np.linalg.norm(intersection - final_feet_point) for intersection in intersections]
+                print "Final point not in zone. Aiming closest {0}".format(final_feet_point)
+                return np.array(intersections[norms.index(min(norms))].tolist() + [-self.h])
         else:
-            print "Computing tmp position before final line"
-            print "Computing pure rotating movement"
-            C_rot = ['C', np.array(O), np.linalg.norm(np.array(O)-np.array(I))]
+            print "No final line intersection found"
             intersections = []
-            inter_kept = []
+            # If they were no intersection, we use the frm variable to compute the movement.
+            I_point = tools.intersect(final_line, ['L', np.array([0., 0.]), np.array([final_orientation[1], -final_orientation[0]])])[0]
+            aimed_point = (1-self.frm) * I_point + self.frm * final_feet_point
             for entity in entities:
-                inters = intersect(C_rot, entity)
-                print "{0} intersection(s) between {1} and {2}".format(len(inters), C_rot, entity)
-                for tmp in inters:
-                    print "Possible landing point : {0} from {1}, cosinus is {2} compared to {3}".format(tmp, I, np.dot(leg_rest_vector, (tmp-np.array(zone_center))/np.linalg.norm(np.array(zone_center)-tmp)), np.dot(leg_rest_vector, (zone_corners[3]-np.array(zone_center))/np.linalg.norm(np.array(zone_center)-zone_corners[3])))
-                    if entity[0] == 'S' or np.dot(leg_rest_vector, tmp/np.linalg.norm(tmp)) >= np.dot(leg_rest_vector, zone_corners[3]/np.linalg.norm(zone_corners[3])):
-                        inter_kept += [tmp]
-                        print "Kept :"
-            dists = []
-            for inter in inter_kept:
-                dists += [np.linalg.norm(inter-np.array(I))]
-            v1 = inter_kept[dists.index(max(dists))] - np.array(I)
-            print "v1 : {0}".format(v1)
-            
-            print "Computing permanent rotating movement"
-            S_direct = ['S', np.array(I), np.array(F)]
-            intersections = []
-            inter_kept=[]
-            for entity in entities:
-                inters = intersect(S_direct, entity)
-                print "{0} intersection(s) between {1} and {2}".format(len(inters), S_direct, entity)
-                for tmp in inters:
-                    print "Possible landing point : {0} from {1}, cosinus is {2} compared to {3}".format(tmp, I, np.dot(leg_rest_vector, (tmp-np.array(zone_center))/np.lingalg.norm(np.array(zone_center)-tmp)), np.dot(leg_rest_vector, (zone_corners[3]-np.array(zone_center))/np.linalg.norm(np.array(zone_center)-zone_corners[3])))
-                    if entity[0] == 'S' or np.dot(leg_rest_vector, tmp-1/np.linalg.norm(tmp)) >= np.dot(leg_rest_vector, zone_corners[3]/np.linalg.norm(zone_corners[3])):
-                        inter_kept += [tmp]
-                        print "Kept :"
-            dists = []
-            for inter in inter_kept:
-                dists += [np.linalg.norm(inter-np.array(F))]
-            v2 = inter_kept[dists.index(min(dists))] - np.array(I)
-            print "v2 : {0}".format(v2)
-            
-            print "Computing final point considering v_mean"
-            v_mean = v2
-            #v_mean = facteur_rotation_mouvement * v2 + (1 - facteur_rotation_mouvement)*v1
-            tmp_line = ['L', I, v_mean]
-            inter_kept = []
-            for entity in entities:
-                inters = intersect(tmp_line, entity)
-                print "{0} intersection(s) between {1} and {2}".format(len(inters), tmp_line, entity)
-                for tmp in inters:
-                    print "Possible landing point : {0} from {1}, cosinus is {2} compared to {3}".format(tmp, I, np.dot(leg_rest_vector, (tmp-np.array(zone_center))/np.linalg.norm(np.array(zone_center)-tmp)), np.dot(leg_rest_vector, (zone_corners[3]-np.array(zone_center))/np.linalg.norm(np.array(zone_center)-zone_corners[3])))
-                    if entity[0] == 'S' or np.dot(leg_rest_vector, (tmp-1*np.array(zone_center))/np.linalg.norm(np.array(zone_center)-tmp)) >= np.dot(leg_rest_vector, (zone_corners[3]-np.array(zone_center))/np.linalg.norm(np.array(zone_center)-zone_corners[3])):
-                        inter_kept += [tmp]
-                        print "Kept :"
-                        print zone_center, tmp, -1*np.array(zone_center)+tmp
-            dists = []
-            for inter in inter_kept:
-                dists += [np.linalg.norm(inter-np.array(F))]
-            print "Arrival point from {0} : {1}".format(I, inter_kept[dists.index(min(dists))])
-            ideal_point = inter_kept[dists.index(min(dists))]
-                                                            
-            return final_point
-                                                        
+                print "Intersecting {0} and {1} for leg {2}".format(final_line, entity, self.leg_id)
+                intersections_tmp = [[tools.intersect(['S', self.relative_feet_position[0:2], aimed_point], entity), entity[0]]]
+                for intersection_tmp in intersections_tmp:
+                    print "Tmp intersection found : {0}".format(intersection_tmp)
+                    for intersection in intersection_tmp[0]:
+                        if intersection_tmp[1] == 'S' or (zone_limits[2] <= np.arctan(intersection[0]/-intersection[1]) <= zone_limits[3] and intersection[1] < 0):
+                            intersections += [intersection]
+            if len(intersections) == 0:
+                print "Failed to find an intersection point with frm value"
+                return None
+            elif len(intersections) > 1:
+                print "Found more than one intersection with frm value, abnormal : {0}".format(intersections)
+                return None
+            else:
+                print "Intends to land in {0}".format(intersections[0])
+                return intersections[0]
