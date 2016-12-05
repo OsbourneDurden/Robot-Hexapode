@@ -59,10 +59,12 @@ class Leg:
         self.zone_colors = {"need": 'r',
                             "envy": 'b',
                             "landing" : 'g',
+                            "center" : 'y',
                             "critical" : 'k'}
         self.ratios = {"need": need,
                        "envy": envy,
                        "landing":landing,
+                       "center":0.5,
                        "critical": 0}
 
         self.speed_ratio_up_down = speed_ratio
@@ -112,7 +114,7 @@ class Leg:
                            /(2 * self.l2 * np.sqrt(R**2 + z**2)))
             phi2 = math.atan(z/R)
             gamma = np.pi/2 - (phi + phi2)
-            print "Saving angles : {0},{1} et {2} from position {3}".format(alpha, beta, gamma, self.relative_feet_position)
+            print "Saving angles : {0},{1} and {2} from position {3}".format(alpha, beta, gamma, self.relative_feet_position)
             self.angles = [alpha, beta, gamma]
             return None
         except:
@@ -220,11 +222,11 @@ class Leg:
         
         # First we look for the point to be aimed.
         point_aimed = self.get_arrival_point(final_feet_point, final_orientation)
-       
-        # Now we see if we have to add a line between the two partial circles or if a continous circle works.
-        D_aimed = (self.h_up * (2 - (points_aimed[2] - self.relative_feet_position[2]))) * (np.sin(self.flight_angle)/(1-np.cos(self.flight_angle)))
+        # TODO : Check h_aimed < H_max
+        # Now wei see if we have to add a line between the two partial circles or if a continous circle works.
+        DX_aimed = (self.h_up * 2 + abs(points_aimed[2] - self.relative_feet_position[2])) * (np.sin(self.flight_angle)/(1-np.cos(self.flight_angle)))
         if D_aimed >= np.linalg.norm(point_aimed[:2] - self.relative_feet_position[:2]) : # If this distance is too big, it means that fliying up to h_up is useless, thus we have to reduce the height reached
-            h_aimed = 
+            h_aimed = None
 
         D = np.linalg.norm(np.array(start)-np.array(arrival))
         O = [(start[0]+arrival[0])/2, (start[1]+arrival[1])/2, ((D**2)/4-self.h_up**2)/(2*self.h_up)]

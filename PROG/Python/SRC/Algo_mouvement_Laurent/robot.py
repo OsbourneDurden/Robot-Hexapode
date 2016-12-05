@@ -2,11 +2,13 @@ from leg import *
 import numpy as np
 
 class Robot:
-    def __init__(self, N_legs = 6, l1 = 1., l2 = 1., l = 0.7, L = 3.7, minimum_legs_down = 4, frm = 0.1, srud = 7., udhr = 0.1, flight_angle = pi/4):
+    def __init__(self, N_legs = 6, l1 = 1., l2 = 1., l = 0.7, L = 3.7, minimum_legs_down = 4, max_sameside_leg_number = 4, frm = 0.1, srud =8., udhr = 0.1, flight_angle = pi/4):
         # All length units here are in arbitrary units. 
         self.N_legs = N_legs # Number of leg in this model
+
+        # RULES DEFINITIONS
         self.minimum_legs_down = minimum_legs_down # Minimum number of leg on the ground at all times to ensure bearing
-        self.Legs= []
+        self.max_sameside_leg_number = max_sameside_leg_number # Max number of leg that can be on the same side
 
         self.l = l # Width of the body
         self.L = L # Length of the body
@@ -57,6 +59,7 @@ class Robot:
         for i in range(len(legs_fix)):
             legs_fix[i] = np.array(legs_fix[i])
 
+        self.Legs= []
         # Now we define all the legs with the set of parameters defined here
         for n_leg in range(self.N_legs):
             if legs_fix[n_leg][1] < 0:
@@ -135,11 +138,16 @@ class Robot:
 
             demands = []
 
+            mean_alpha_move = 0 # Gives an estimate of the speed of the robot at this timestep. Allows to create previsions for a flight.
+            legs_down = 0
+
             for leg in self.Legs:
                 if leg.status == 'down': # If the leg is currently on the ground
+                    legs_down += 1
                     leg.relative_feet_position = leg.get_leg_relative_position(self.position, self.orientation) # We first update the relative position of the grounded legs
                     leg.update_angles_from_position() # We update the new angles for this relative position
                     self.angles_history[-1] += [leg.angles] 
+                    mean_alpha_move += abs(self.angles_history[-2][-1][0]-self.angles_history[-1][-1][0])
                     self.feet_positions_history[-1] += [leg.absolute_feet_position]
 
                     leg_zones = leg.zone_presence() # Now we check the presence of the leg in the different zones
@@ -161,11 +169,14 @@ class Robot:
                 elif leg.status == 'up': # If the leg is currently moving in the air, towards a designed position.
                     leg.relative_feet_position = leg.flight[t - leg.t_takeoff] # We update the new position from the predifined flight
                     leg.update_angles_from_position() # Update the leg angles from this position
+                    leg.absolute_position = leg.get_leg_absolute_position(self.position, self.orientation)
 
+                    self.feet_positions_history[-1] += [leg.absolute_feet_position]
                     self.angles_history[-1] += [leg.angles] 
                     demands += [None]
 
                 elif leg.status == 'end': # If the leg reached its final position. Basically here we only do data saving
+                    legs_down += 1
                     leg.relative_feet_position = leg.get_leg_relative_position(self.position, self.orientation)
                     leg.update_angles_from_position()
                     self.angles_history[-1] += [leg.angles] 
@@ -176,5 +187,24 @@ class Robot:
                     print "Unknown status for leg {0} : {1}".format(leg.leg_id, leg.status)
 
             # Now, all legs positions have been updated. We now check the demands of each leg, and update the statuses
-
+            mean_alpha_move /= legs_down
+            if demands.count(None) == self.N_legs:
+                # Here, no demand was made, thus all legs are inside the 'envy' zone
+                if (np.array(R.angles_history[0])[:,0] < 0).sum() > self.max_sameside_leg_number: 
+                    # and they are too many legs on the same negative side
+                    distances = []
+                    for leg in self.Legs:
+                        if leg.angles[0] < 0:
+                            distances += [leg.get_ratio_distance_from_zone_to_next('center', 'envy')]
+                        else:
+                            distances += [0]
+                    print "Too many legs found backwards. Maximum distance found for leg {0} at value {1}".format(distances.index(max(distances)), max(distances))
+                    demands[distances.index(max(distances))] = 'envy'
+                    # Just wrote HERE
+                elif  (np.array(R.angles_history[0])[:,0] > 0).sum() > self.max_sameside_leg_number:
+                    # and they are too many legs on the same posiive side, meaning we moved forward too many of them !
+                    print "Algorithmic error, too many legs moved forward, can't keep up with the rules !"
+                    sys.exit("Error 5874216')
+                        
+                        
 
