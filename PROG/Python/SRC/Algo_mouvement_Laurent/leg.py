@@ -95,7 +95,7 @@ class Leg:
         if init:
             self.h = h
 
-        return np.array([x, -y, -self.h])
+        return np.array([x, -y, -h])
 
     def get_extension(self, angles):
         return self.l1*np.cos(angles[1]) + self.l2*np.sin(angles[2])
@@ -105,7 +105,11 @@ class Leg:
         R = np.linalg.norm(self.relative_feet_position[:2])
         z = -self.relative_feet_position[2]
         try:
-            alpha = math.asin(self.relative_feet_position[0]/R)
+            if self.side == 'right':
+                alpha = math.asin(self.relative_feet_position[0]/R)
+            else:
+                alpha = math.asin(self.relative_feet_position[0]/R)
+
             theta = math.acos((R**2 + z**2 + self.l1**2 - self.l2**2)
                              /(2 * self.l1 * np.sqrt(R**2 + z**2)))
             theta2 = math.atan(R/z)
@@ -114,7 +118,7 @@ class Leg:
                            /(2 * self.l2 * np.sqrt(R**2 + z**2)))
             phi2 = math.atan(z/R)
             gamma = np.pi/2 - (phi + phi2)
-            print "Saving angles : {0},{1} and {2} from position {3}".format(alpha, beta, gamma, self.relative_feet_position)
+            print "Changing angles for leg {4} : {0},{1} and {2} from position {3}".format(alpha, beta, gamma, self.relative_feet_position, self.leg_id)
             self.angles = [alpha, beta, gamma]
             return None
         except:
@@ -126,21 +130,18 @@ class Leg:
 # Input:
 #   Robot_object : Structure robot, that gives opsition and orientation in absolute landmark
         if self.side == 'right':
-            return np.array(position)+tools.rotate(self.fix_position + self.relative_feet_position[0:2], orientation)
+            return np.array(position)+np.array((tools.rotate(self.fix_position + self.relative_feet_position[0:2], orientation)).tolist() + [self.relative_feet_position[2]])
         else:
-            return np.array(position)+tools.rotate(self.fix_position - self.relative_feet_position[0:2], orientation)
+            return np.array(position)+np.array((tools.rotate(self.fix_position - self.relative_feet_position[0:2], orientation)).tolist() + [self.relative_feet_position[2]])
 
     def get_leg_relative_position(self, position, orientation):
-        print position
-        print orientation
-        print self.absolute_feet_position
 # Opposite function to get_leg_absolute_position. Gives relative position of the leg considering its absolute position and the absolute position of the robot
 # Input:
 #   Robot_object : Structure robot, that gives opsition and orientation in absolute landmark
         if self.side == 'right':
-            return np.array((tools.rotate(self.absolute_feet_position - position, [orientation[0], -orientation[1]]) - self.fix_position).tolist() + [0.])
+            return np.array((tools.rotate(self.absolute_feet_position - position, [orientation[0], -orientation[1]]) - self.fix_position).tolist() + [self.absolute_feet_position[2]])
         else:
-            return -np.array((tools.rotate(self.absolute_feet_position - position, [orientation[0], -orientation[1]]) - self.fix_position).tolist() + [0.])
+            return np.array((tools.rotate(self.absolute_feet_position - position, [orientation[0], -orientation[1]]) - self.fix_position).tolist() + [self.absolute_feet_position[2]])
 
     def zone_presence(self):
 # Function to check in which zone the leg is or is not. 
@@ -155,6 +156,7 @@ class Leg:
             limits = self.get_min_max_values(zone)
             if R < limits[0] or R > limits[1] or alpha < limits[2] or alpha > limits[3]:
                 zone_presence[zone] = False
+        zone_presence.pop('center')
         return zone_presence
 
     def get_min_max_values(self, zone_name):
@@ -200,45 +202,54 @@ class Leg:
         for n_point in range(len(arcs_points)-1):
             pyl.plot([arcs_points[n_point][0], arcs_points[n_point+1][0]], [arcs_points[n_point][1], arcs_points[n_point+1][1]], self.zone_colors[zone_name]+'-')
 
+    def plot_feet(self):
+        pyl.plot(self.relative_feet_position[0], self.relative_feet_position[1], 'x')
+
     def get_ratio_distance_from_zone_to_next(self, zone_in, zone_out):
+        '''Computes the ratio of distances between the two - inner and outer - zones the leg is around. 
+        Needs the names of these two zones'''
+
+        # Function FAILS
         R = self.get_extension(self.angles)
         r1, r2, a1, a2 = self.get_min_max_values(zone_out)
         dmin1 = min (abs(R-r1), abs(r2-R), abs(R*(self.angles[0]-a1)), abs(R*(self.angles[0]-a2)))
-        print "Distance to {0} : {1}".format(zone_out, dmin1)
+        #print "Distance to {0} : {1}".format(zone_out, dmin1)
         r1, r2, a1, a2 = self.get_min_max_values(zone_in)
-        dmin2 = min (abs(r1-R), abs(R-r2), abs(R*(self.angles[0]-a1)), abs(R*(self.angles[0]-a2)))
-        print "Distance to {0} : {1}".format(zone_in, dmin2)
+        micro_zone_value = 0
+        if not r1<R<r2:
+            micro_zone_value += 2
+        if not a1<self.angles[0]<a2:
+            micro_zone_value += 1
+        if micro_zone_value == 3:
+            corners = self.get_corners(zone_in)
+            dmin2 = min([np.linalg.norm(self.relative_feet_position[:2]-corner) for corner in corners])
+        elif micro_zone_value == 2:
+            dmin2 = min(np.linalg.norm(r1-R), np.linalg.norm(r2-R))
+        elif micro_zone_value == 1:
+            dmin2 = R*min(np.linalg.norm(self.angles[0]-a1), np.linalg.norm(self.angles[0]-a2))
+        else:
+            print "Zone_in {0} is actually outer for leg {1} and relative_feet_position {2} ! Weird".format(zone_in, self.leg_id, self.relative_feet_position)
+            sys.exit('Error 2547813')
+        #print "Distance to {0} : {1}".format(zone_in, dmin2)
         return dmin2/(dmin1 + dmin2)
 
-    def create_flight(self, final_feet_point, final_orientation, N_points):
+    def create_flight(self, final_feet_point, final_orientation, speed, N_max_points):
         '''Creates the array of (relative) positions the leg should be at while in the air. 
         
         Needs the estimated relative arrival point and the number of points for the flight duration.
         Also, we assume that the leg will land in z = 0. Possible necessary modifications about plannification
         Input :
-            final_feet_point : 3-dimensional np.array vector containing the relative position of the feet when the move is over AT THE END OF THE FLIGHT. Most likely the third value is 0 as we can assume the ground is flat
+            final_feet_point : 3-dimensional np.array vector containing the relative position of the feet when the move is over AT THE END OF THE FLIGHT. 
             final_orientation : 2-D vector containing the final (relative) orientation of the robot AT THE END OF THE FLIGHT.
             N_points : number of points this flight should contain'''
         
         # First we look for the point to be aimed.
-        point_aimed = self.get_arrival_point(final_feet_point, final_orientation)
-        # TODO : Check h_aimed < H_max
-        # Now wei see if we have to add a line between the two partial circles or if a continous circle works.
-        DX_aimed = (self.h_up * 2 + abs(points_aimed[2] - self.relative_feet_position[2])) * (np.sin(self.flight_angle)/(1-np.cos(self.flight_angle)))
-        if D_aimed >= np.linalg.norm(point_aimed[:2] - self.relative_feet_position[:2]) : # If this distance is too big, it means that fliying up to h_up is useless, thus we have to reduce the height reached
-            h_aimed = None
+        arrival = self.get_arrival_point(final_feet_point, final_orientation)
+        start = self.relative_feet_position
 
-        D = np.linalg.norm(np.array(start)-np.array(arrival))
-        O = [(start[0]+arrival[0])/2, (start[1]+arrival[1])/2, ((D**2)/4-self.h_up**2)/(2*self.h_up)]
-        delta = 2*math.atan(D/(2*O[2]))
-        L = delta*(self.h_up + O[2])
-        N = max(3, int(L/(self.speed_ratio_up_down*mean_speed*self.R_repos)))
-        deltas = np.linspace(-delta/2, delta/2, N)
-        self.flight = [start]
-        for delta in deltas:
-            self.flight += [[O[0]+np.sin(delta)*(O[2]+h_up)*(arrival[0]-start[0])/D, O[1]+np.sin(delta)*(O[2]+h_up)*(arrival[1]-start[1])/D, -O[2]+np.cos(delta)*(O[2]+self.h_up)]]
-        self.flight += [arrival]
-        print "Final flight : {0} points for a distance of {1}, from {2} to {3}".format(len(self.flight), D, start, arrival)
+        n_points = int(np.linalg.norm(arrival-start)/speed)
+        self.flight = tools.flight(start, arrival, h_up, flight_angle, n_points)
+        print "Final flight : {0} points for a distance of {1}, from {2} to {3}".format(len(self.flight), np.linalg.norm(arrival-start), start, arrival)
 
     def is_point_in_zone(self, point, zone_aimed):
         '''Checks if a point is inside the zone_aimed.
