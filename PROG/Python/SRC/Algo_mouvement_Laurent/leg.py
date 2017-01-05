@@ -84,6 +84,7 @@ class Leg:
         self.cycle_takeoff = None
         self.status = 'down'
         self.demand = None
+        self.contact = True
 
     def get_position_from_angles(self, angles, init=False):
         R = self.l1*np.cos(angles[1]) + self.l2*np.sin(angles[2])
@@ -240,23 +241,51 @@ class Leg:
         #print "Distance to {0} : {1}".format(zone_in, dmin2)
         return dmin2/(dmin1 + dmin2)
 
-    def check_landing(self):
-        
+    def extend_flight(self):
+        '''
+        In case of an abnormaly long flight (i.e a hole where the leg should land), extends the flight by simply repeating the last vertical variation
+        '''
+        self.relative_feet_position += np.array([0., 0., (self.flight[-1][2]-self.flight[-2][2])])
+        self.update_angles_from_position()
+    
+    def follow_flight(self, cycle):
+        '''
+        Function to follow the schedule flight as long as it is within its length
+        Input :
+            - cycle : int, cycle number by comparison to the initial cycle_takeoff
+        '''
+        self.relative_feet_position = self.flight[cycle - self.cycle_takeoff] # We update the new position from the predifined flight
+        self.update_angles_from_position() # Update the leg angles from this position
 
-    def initiate_flight(self, cycle, final_feet_point, final_orientation, speed, N_max_points):
+    def check_landing(self, cycle=None):
+        '''
+        Function to check if the leg has landed or not, and updates the different statuses
+        Input :
+            cycle : int, cycle number. Allows to cheat for tests and developpement stage
+        '''
+        if cycle != None:
+            if cycle-self.cycle_takeoff == len(self.flight):
+                self.status='down'
+                print "Leg {0} landed".forma(self.leg_id)
+        else:
+            if self.contact == True:
+                self.status='down'
+                print "Leg {0} landed".forma(self.leg_id)
+
+    def initiate_flight(self, cycle, final_feet_point, final_orientation, N_points):
         '''Function to initiate a flight of the considered leg.
         Should contain all the variables changes, the call for this function should be enough for the leg to move on later cycles.
         Input :
-            final_feet_position : 3-dimensional np.array vector containing the relative position of the feet when the move is over AT THE END OF THE FLIGHT.
+            cycle : cycle number at the start of the flight
+            final_feet_point : 3-dimensional np.array vector containing the relative position of the feet when the move is over AT THE END OF THE FLIGHT.
             final_orientation : 2-D vector containing the final (relative) orientation of the robot AT THE END OF THE FLIGHT.
-            speed : average speed that should be used here, considering the alpha angle
-            N_max_points : maximum number of points this flight should contain'''
+            N_points : number of points this flight should contain'''
 
-        self.create_flight(final_feet_point, final_orientation, speed, N_max_points)
+        self.create_flight(final_feet_point, final_orientation, N_points)
         self.status = 'up'
         self.cycle_takeoff = cycle
 
-    def create_flight(self, final_feet_point, final_orientation, speed, N_max_points):
+    def create_flight(self, final_feet_point, final_orientation, N_points):
         '''Creates the array of (relative) positions the leg should be at while in the air. 
         
         Needs the estimated relative arrival point and the number of points for the flight duration.
@@ -264,15 +293,13 @@ class Leg:
         Input :
             final_feet_point : 3-dimensional np.array vector containing the relative position of the feet when the move is over AT THE END OF THE FLIGHT. 
             final_orientation : 2-D vector containing the final (relative) orientation of the robot AT THE END OF THE FLIGHT.
-            speed : average speed that should be used here, considering the alpha angle
-            N_max_points : maximum number of points this flight should contain'''
+            N_points : number of points this flight should contain'''
         
         # First we look for the point to be aimed.
         arrival = self.get_arrival_point(final_feet_point, final_orientation)
         start = self.relative_feet_position
 
-        n_points = min(N_max_points, int(abs(self.get_angles_from(arrival)-self.get_angles_from(start))/speed))
-        self.flight = tools.flight(start, arrival, h_up, self.flight_angle, n_points)
+        self.flight = tools.flight(start, arrival, h_up, self.flight_angle, N_points)
         print "Final flight : {0} points for a distance of {1}, from {2} to {3}".format(len(self.flight), np.linalg.norm(arrival-start), start, arrival)
 
     def is_point_in_zone(self, point, zone_aimed):

@@ -93,6 +93,21 @@ class Robot:
             print leg.absolute_feet_position
             self.feet_positions_history[-1] += [leg.absolute_feet_position]
 
+    def get_relative_point(self, final_absolute_position, leg_to_raise):
+        if self.legs[leg_to_raise].side == 'right':
+            return final_absolute_position-np.array(self.legs[leg_to_raise].fix_position+[0.])
+        else:
+            tmp = final_absolute_position-np.array(self.legs[leg_to_raise].fix_position+[0.])
+            return np.array([tmp[0], -tmp[1], tmp[2]])
+
+    def get_relative_orientation(self, final_absolute_orientation, leg_to_raise):
+        if self.legs[leg_to_raise].side == 'right':
+            return final_absolute_orientation
+        else:
+            return np.array([final_absolute_orientation[0], -final_absolute_oientation[1]])
+
+    def get_flight_length(self, leg_to_raise, mean_alpha_move):
+        return int((self.legs[leg_to_raise].alphamax-self.legs[leg_to_raise].alphamin)/(mean_alpha_move*self.legs[leg_to_raise].srud))
 
     def move(self, final_position, N_points = 500, rotation_factor = 0.1):
         '''
@@ -108,14 +123,15 @@ class Robot:
         points_center = [0,0]
         points_center[0] = np.linspace(self.position[0], final_position[0], N_points)
         points_center[1] = np.linspace(self.position[1], final_position[1], N_points)
+        positions = np.array(points_center)
         orientation_x = np.linspace(self.orientation[0], final_orientation[0], int(self.frm*N_points))
         orientation_y = np.linspace(self.orientation[1], final_orientation[1], int(self.frm*N_points))
         orientation_x /= np.sqrt(orientation_x**2+orientation_y**2)
         orientation_y /= np.sqrt(orientation_x**2+orientation_y**2)
-        orientation = [0,0]
-        orientation[0] = np.array(orientation_x.tolist() + [final_orientation[0] for i in range(N_points - len(orientation_x))])
-        orientation[1] = np.array(orientation_y.tolist() + [final_orientation[1] for i in range(N_points - len(orientation_y))])
-
+        orientations = [0,0]
+        orientations[0] = np.array(orientation_x.tolist() + [final_orientation[0] for i in range(N_points - len(orientation_x))])
+        orientations[1] = np.array(orientation_y.tolist() + [final_orientation[1] for i in range(N_points - len(orientation_y))])
+        orientations=np.array(orientations)
 
         final_feet_positions =[]
         for leg in self.Legs:
@@ -131,7 +147,8 @@ class Robot:
             self.angles_history += [[]]
             self.feet_positions_history += [[]]
             # Update position for this cycle and save it
-            self.position = np.array([points_center[0][cycle], points_center[1][cycle], 0.])
+            self.position = np.array(positions[:,cycle].tolist()+[0.])
+            self.orientation = orientations[:,cycle]
             self.history += [self.position]
             self.landmark_history += [self.current_landmark]
 
@@ -168,14 +185,17 @@ class Robot:
                         sys.exit('Error 5249632')
                 
                 elif leg.status == 'up': # If the leg is currently moving in the air, towards a designed position.
-                    leg.relative_feet_position = leg.flight[cycle - leg.cycle_takeoff] # We update the new position from the predifined flight
-                    leg.update_angles_from_position() # Update the leg angles from this position
+                    if (cycle - leg.cycle_takeoff) <= len(leg.flight)-1:
+                        leg.follow_flight(cycle)
+                    else:
+                        leg.extend_flight()
+                    
                     leg.absolute_position = leg.get_leg_absolute_position(self.position, self.orientation)
-
+                    
                     self.feet_positions_history[-1] += [leg.absolute_feet_position]
                     self.angles_history[-1] += [leg.angles] 
+                    leg.check_landing(cycle)
                     demands += [0]
-                    leg.check_landing()
 
                 elif leg.status == 'end': # If the leg reached its final position. Basically here we only do data saving
                     legs_down += 1
@@ -254,5 +274,5 @@ class Robot:
                 print "No leg to be raised at the end of cycle {0}".format(cycle)
             else:
                 print "Leg {0} is going to be raised at the end of cycle {1}".format(leg_to_raise, cycle)
-            if leg_to_raise != None:
-                
+                N_points = self.get_flight_length(leg_to_raise, mean_alpha_move)
+                self.legs[leg_to_raise].initiate_flight(cycle, self.get_relative_point(positions[:,cycle+N_points], leg_to_raise), self.get_relative_orientation(orientations[:,cycle+N_points], leg_to_raise), N_points)
