@@ -123,7 +123,7 @@ class Robot:
 
 
         for cycle in range(1, N_points):
-        # We start at cycle t=1 since t=0 iss the initial position.
+        # We start at cycle 1 since 0 is the initial position.
             print ""
             print "Statuses at start of cycle {0} : {1}".format(cycle, [leg.status for leg in self.Legs])
 
@@ -168,13 +168,14 @@ class Robot:
                         sys.exit('Error 5249632')
                 
                 elif leg.status == 'up': # If the leg is currently moving in the air, towards a designed position.
-                    leg.relative_feet_position = leg.flight[t - leg.t_takeoff] # We update the new position from the predifined flight
+                    leg.relative_feet_position = leg.flight[cycle - leg.cycle_takeoff] # We update the new position from the predifined flight
                     leg.update_angles_from_position() # Update the leg angles from this position
                     leg.absolute_position = leg.get_leg_absolute_position(self.position, self.orientation)
 
                     self.feet_positions_history[-1] += [leg.absolute_feet_position]
                     self.angles_history[-1] += [leg.angles] 
                     demands += [0]
+                    leg.check_landing()
 
                 elif leg.status == 'end': # If the leg reached its final position. Basically here we only do data saving
                     legs_down += 1
@@ -253,3 +254,5 @@ class Robot:
                 print "No leg to be raised at the end of cycle {0}".format(cycle)
             else:
                 print "Leg {0} is going to be raised at the end of cycle {1}".format(leg_to_raise, cycle)
+            if leg_to_raise != None:
+                

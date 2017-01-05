@@ -80,9 +80,8 @@ class Leg:
         self.Rmin = np.sqrt(self.l1**2 - (self.h - self.l2*np.cos(self.gammamin))**2) + self.l2*np.sin(self.gammamin)
         self.Rmax = np.sqrt((self.l1+self.l2)**2-self.h**2)
 
-        self.t_origin = None
         self.flight = None
-        self.t_takeoff = 0
+        self.cycle_takeoff = None
         self.status = 'down'
         self.demand = None
 
@@ -100,15 +99,15 @@ class Leg:
     def get_extension(self, angles):
         return self.l1*np.cos(angles[1]) + self.l2*np.sin(angles[2])
 
-    def update_angles_from_position(self):
-# Computes the 3 angles alpha, beta, gamma from the position of the leg in its own referential
-        R = np.linalg.norm(self.relative_feet_position[:2])
-        z = -self.relative_feet_position[2]
+    def get_angles_from(self, position):
+        # Computes the 3 angles alpha, beta, gamma from a certain position of the leg in its own referential
+        R = np.linalg.norm(position[:2])
+        z = -position[2]
         try:
             if self.side == 'right':
-                alpha = math.asin(self.relative_feet_position[0]/R)
+                alpha = math.asin(position[0]/R)
             else:
-                alpha = math.asin(self.relative_feet_position[0]/R)
+                alpha = math.asin(position[0]/R)
 
             theta = math.acos((R**2 + z**2 + self.l1**2 - self.l2**2)
                              /(2 * self.l1 * np.sqrt(R**2 + z**2)))
@@ -118,10 +117,18 @@ class Leg:
                            /(2 * self.l2 * np.sqrt(R**2 + z**2)))
             phi2 = math.atan(z/R)
             gamma = np.pi/2 - (phi + phi2)
-            print "Changing angles for leg {4} : {0},{1} and {2} from position {3}".format(alpha, beta, gamma, self.relative_feet_position, self.leg_id)
-            self.angles = [alpha, beta, gamma]
-            return None
+            return [alpha, beta, gamma]
         except:
+            return None
+
+    def update_angles_from_position(self):
+        # Computes the 3 angles alpha, beta, gamma from the position of the leg in its own referential
+        angles = self.get_angles_from(self.relative_feet_position)
+        if angles != None:
+            print "Changing angles for leg {4} : {0},{1} and {2} from position {3}".format(angles[0], angles[1], angles[2], self.relative_feet_position, self.leg_id)
+            self.angles = angles
+            return None
+        else:
             print "Unable to find angles for leg {0} at position {1}".format(self.leg_id, self.relative_feet_position)
             return None
     
@@ -233,6 +240,22 @@ class Leg:
         #print "Distance to {0} : {1}".format(zone_in, dmin2)
         return dmin2/(dmin1 + dmin2)
 
+    def check_landing(self):
+        
+
+    def initiate_flight(self, cycle, final_feet_point, final_orientation, speed, N_max_points):
+        '''Function to initiate a flight of the considered leg.
+        Should contain all the variables changes, the call for this function should be enough for the leg to move on later cycles.
+        Input :
+            final_feet_position : 3-dimensional np.array vector containing the relative position of the feet when the move is over AT THE END OF THE FLIGHT.
+            final_orientation : 2-D vector containing the final (relative) orientation of the robot AT THE END OF THE FLIGHT.
+            speed : average speed that should be used here, considering the alpha angle
+            N_max_points : maximum number of points this flight should contain'''
+
+        self.create_flight(final_feet_point, final_orientation, speed, N_max_points)
+        self.status = 'up'
+        self.cycle_takeoff = cycle
+
     def create_flight(self, final_feet_point, final_orientation, speed, N_max_points):
         '''Creates the array of (relative) positions the leg should be at while in the air. 
         
@@ -241,14 +264,15 @@ class Leg:
         Input :
             final_feet_point : 3-dimensional np.array vector containing the relative position of the feet when the move is over AT THE END OF THE FLIGHT. 
             final_orientation : 2-D vector containing the final (relative) orientation of the robot AT THE END OF THE FLIGHT.
-            N_points : number of points this flight should contain'''
+            speed : average speed that should be used here, considering the alpha angle
+            N_max_points : maximum number of points this flight should contain'''
         
         # First we look for the point to be aimed.
         arrival = self.get_arrival_point(final_feet_point, final_orientation)
         start = self.relative_feet_position
 
-        n_points = int(np.linalg.norm(arrival-start)/speed)
-        self.flight = tools.flight(start, arrival, h_up, flight_angle, n_points)
+        n_points = min(N_max_points, int(abs(self.get_angles_from(arrival)-self.get_angles_from(start))/speed))
+        self.flight = tools.flight(start, arrival, h_up, self.flight_angle, n_points)
         print "Final flight : {0} points for a distance of {1}, from {2} to {3}".format(len(self.flight), np.linalg.norm(arrival-start), start, arrival)
 
     def is_point_in_zone(self, point, zone_aimed):
