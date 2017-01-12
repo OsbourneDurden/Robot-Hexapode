@@ -6,16 +6,17 @@ import matplotlib.pylab as pyl
 # The leg class is defined as something static. We don't consider any movement of the robot in here, thus all input and output will be in its self referential :
 # The landmark is located of the fix_position of the leg. Thus, if the feet if on the ground, the z position is most likely negative.
 #
-#           [0., 0.]    y
-#               o       ^
-#                       |
-#                       |
-#                     Z O----> x
-#
-#          __________
-#         /          \
-#        /            \        
-#       /              \        
+#           [0., 0.]    
+#               o       
+#               |     Z O----> 
+#		|       |    y 
+#               |       |
+#               |       |
+#		|	v x
+#          _____|____
+#         /     |R   \
+#        /      |     \        
+#       /       o      \        
 #      /                \        
 #     /                  \        
 #    /____________________\
@@ -32,7 +33,7 @@ import matplotlib.pylab as pyl
 
 
 class Leg:
-    def __init__(self, leg_id, fix_position, side, alpha_data, beta_data, gamma_data, l1, l2, landing, envy, need, speed_ratio, up_down_ratio, flight_angle, frm, color):
+    def __init__(self, leg_id, fix_position, fix_angle, side, alpha_data, beta_data, gamma_data, l1, l2, l3, landing, envy, need, speed_ratio, up_down_ratio, flight_angle, frm, color):
         self.alphamin = alpha_data[0]
         self.alphamax = alpha_data[1]
         self.alpharepos = alpha_data[2]
@@ -49,10 +50,12 @@ class Leg:
 
         self.side = side
         self.fix_position = fix_position
+	self.fix_angle = fix_angle
         self.leg_id = leg_id
 
         self.l1 = l1
         self.l2 = l2
+	self.l3 = l3
 
         self.color = color
         
@@ -77,8 +80,9 @@ class Leg:
         self.frm = frm
 
         self.R_repos = self.get_extension(self.angles)
-        self.Rmin = np.sqrt(self.l1**2 - (self.h - self.l2*np.cos(self.gammamin))**2) + self.l2*np.sin(self.gammamin)
-        self.Rmax = np.sqrt((self.l1+self.l2)**2-self.h**2)
+        sBetaRmin = (self.h - np.sin(self.gammamin)*self.l3)/self.l2
+        self.Rmin = self.l1 + self.l2*np.sqrt(1-sBetaRmin**2) + self.l3*np.sin(self.gammamin)
+        self.Rmax = self.l1 + np.sqrt((self.l1+self.l2)**2-self.h**2)
 
         self.flight = None
         self.cycle_takeoff = None
@@ -87,38 +91,41 @@ class Leg:
         self.contact = True
 
     def get_position_from_angles(self, angles, init=False):
-        R = self.l1*np.cos(angles[1]) + self.l2*np.sin(angles[2])
-        h = self.l1*np.sin(angles[1]) + self.l2*np.cos(angles[2])
-        x = R*np.sin(angles[0])
-        y = R*np.cos(angles[0])
+        alpha = angles[0]
+        beta  = angles[1]
+        gamma = angles[2]
+
+        x = self.l1*np.cos(alpha) + self.l2*np.cos(alpha)*np.cos(beta) + self.l3*np.cos(alpha)*np.cos(gamma)
+        y = self.l1*np.sin(alpha) + self.l2*np.sin(alpha)*np.cos(beta) + self.l3*np.sin(alpha)*np.cos(gamma)
+        z = 0                     - self.l2*np.sin(beta)               - self.l3*np.sin(gamma)
 
         if init:
-            self.h = h
-
-        return np.array([x, -y, -h])
+            self.h = -z
+        return([x,y,z])
 
     def get_extension(self, angles):
-        return self.l1*np.cos(angles[1]) + self.l2*np.sin(angles[2])
+        position = self.get_position_from_angles(angles)
+        return np.sqrt(position[0]**2 + position[1]**2)
 
     def get_angles_from(self, position):
         # Computes the 3 angles alpha, beta, gamma from a certain position of the leg in its own referential
-        R = np.linalg.norm(position[:2])
-        z = -position[2]
-        try:
-            if self.side == 'right':
-                alpha = math.asin(position[0]/R)
-            else:
-                alpha = math.asin(position[0]/R)
+        x = position[0]
+        y = position[1]
+        z = position[2]
 
-            theta = math.acos((R**2 + z**2 + self.l1**2 - self.l2**2)
-                             /(2 * self.l1 * np.sqrt(R**2 + z**2)))
-            theta2 = math.atan(R/z)
-            beta = (theta + theta2)
-            phi = math.acos((R**2 + z**2 + self.l2**2 - self.l1**2)
-                           /(2 * self.l2 * np.sqrt(R**2 + z**2)))
-            phi2 = math.atan(z/R)
-            gamma = np.pi/2 - (phi + phi2)
-            return [alpha, beta, gamma]
+        R = np.sqrt(x**2+y**2)
+        alpha = np.arctan(y/x)
+                
+        try:
+            theta = math.acos(((R-self.l1)**2 + z**2 + self.l2**2 - self.l3**2)
+                    /(2 * self.l2 * np.sqrt((R-self.l1)**2 + z**2)))
+            theta2 = -math.atan((R-self.l1)/z) #possible "-"z missing
+            U = (theta + theta2)
+            phi = math.acos(((R-self.l1)**2 + z**2 + self.l3**2 - self.l2**2)
+                    /(2 * self.l3 * np.sqrt((R-self.l1)**2 + z**2)))
+            phi2 = math.atan(z/(R-self.l1))
+            V = np.pi/2 - (phi + phi2)
+            return [alpha, (V-U)/2, (V+U)/2]
         except:
             return None
 
