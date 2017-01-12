@@ -3,6 +3,10 @@ print('cmd_trajectoire loaded')
 """ a rajouter : passage a cote d'un obstacle """
 from math import sqrt
 
+
+"""constante decartement pour obstacle virtuel"""
+K=1 
+
 def cmd_trajectoire():
     """liste des fonctions:
     passage_entre_obstacle , passage_entre_obstacle_direction , repulse1 , repulse2 ,
@@ -312,7 +316,7 @@ def reliste(liste1,liste2):
     
 
 def passage_entre_obstacle_vect(obst_1x,obst_1y,obst_2x,obst_2y,dist_1,dist_2,desti_x,desti_y):
-    """ utilisation : liste = passage_entre_obstacle(...)
+    """ utilisation : liste = passage_entre_obstacle_vect(...)
     Avec obst_1 la position a l'obstacle de droite et obst_2 la position a l'obstacle de gauche
     Avec dist la distance, desti la position de la destination
     Avec liste les coordonnees  en x et y de la trajectoire
@@ -327,6 +331,7 @@ def passage_entre_obstacle_vect(obst_1x,obst_1y,obst_2x,obst_2y,dist_1,dist_2,de
     traject = []
 
     dist = dist_1+dist_2
+    dist=float(dist)
     """ calcul des points repulses """
 
     repulse_1x,repulse_1y,repulse_2x,repulse_2y=repulse1(obst_1x,obst_1y)
@@ -415,3 +420,57 @@ def distance_(traject_i,position):
     return dis
         
         
+def generateur_obst_virt_gauche(fleche_cour):
+    """ genere un obstacle fictif pour creer une trajectoire
+    La constante K correspond a l'ecartement souhaite """
+    """ attention la fleche_cour doit etre normalisee """
+    
+    deplace_gauche=perpendiculaire(fleche_cour[0],fleche_cour[1])
+    deplace_gauche[0]=deplace_gauche[0]*K
+    deplace_gauche[1]=deplace_gauche[1]*K
+    return deplace_gauche
+
+
+def generateur_obst_virt_droite(fleche_cour):
+    """ genere un obstacle fictif pour creer une trajectoire
+    La constante K correspond a l'ecartement souhaite """
+    """ attention la fleche_cour doit etre normalisee """
+
+    deplace_droite=perpendiculaire(fleche_cour[0],fleche_cour[1])
+    deplace_droite[0]=deplace_droite[0]*-K
+    deplace_droite[1]=deplace_droite[1]*-K
+    return deplace_droite
+
+
+def passage_obst_droite(obst_1x,obst_1y,dist_1,desti_x,desti_y,fleche_cour):
+    """utilisation : liste = passage_obst_droite(...)
+    Avec obst_1 la position a l'obstacle de droite
+    Avec dist_1 la distance a l'obstacle, desti la position de la destination
+    Avec liste les coordonnees en x et y de la trajectoire"""  
+
+    obst_2x,obst_2y=generateur_obst_virt_gauche(fleche_cour)
+    dist_2=K
+    return passage_entre_obstacle_vect(obst_1x,obst_1y,obst_2x,obst_2y,dist_1,dist_2,desti_x,desti_y)
+
+
+def passage_obst_gauche(obst_2x,obst_2y,dist_2,desti_x,desti_y,fleche_cour):
+    """utilisation : liste = passage_obst_gauche(...)
+    Avec obst_2 la position a l'obstacle de gauche
+    Avec dist_2 la distance a l'obstacle, desti la position de la destination
+    Avec liste les coordonnees en x et y de la trajectoire"""  
+
+    obst_1x,obst_1y=generateur_obst_virt_droite(fleche_cour)
+    dist_1=K
+    return passage_entre_obstacle_vect(obst_1x,obst_1y,obst_2x,obst_2y,dist_1,dist_2,desti_x,desti_y)
+
+
+def passage_libre(desti_x,desti_y,fleche_cour):
+    """utilisation : liste = passage_libre(...)
+    Avec desti la position de la destination
+    avec liste les coordonnees en x et y de la trajectoire"""
+
+    obst_1x,obst_1y=generateur_obst_virt_droite(fleche_cour)
+    dist_1=K
+    obst_2x,obst_2y=generateur_obst_virt_gauche(fleche_cour)
+    dist_2=K
+    return passage_entre_obstacle_vect(obst_1x,obst_1y,obst_2x,obst_2y,dist_1,dist_2,desti_x,desti_y)
