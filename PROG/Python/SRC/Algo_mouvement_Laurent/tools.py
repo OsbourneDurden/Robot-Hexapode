@@ -86,6 +86,7 @@ def intersect(A, B):
         if objectB[0]=='S' and (np.linalg.norm(objectB[2]-objectB[1])<l2 or l2<0):
             return []
         return [objectA[1] + l1*u1] 
+    
 def flight(I, F, h_up, flight_angle, n_points):
     '''Creates a trajectory to be followed going through I and F, with a departure angle of flight_angle and going up to h_up higher than the highest point between I and F.
     TODO : Works by iteration, can probably be optimized to set max height more intelligently

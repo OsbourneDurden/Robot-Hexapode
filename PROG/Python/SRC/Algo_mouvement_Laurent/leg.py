@@ -281,6 +281,7 @@ class Leg:
             final_orientation : 2-D vector containing the final (relative) orientation of the robot AT THE END OF THE FLIGHT.
             N_points : number of points this flight should contain'''
 
+        print "Initiating flight with parameters {0}, {1}, {2}, {3}".format(cycle, final_feet_point, final_orientation, N_points)
         self.create_flight(final_feet_point, final_orientation, N_points)
         self.status = 'up'
         self.cycle_takeoff = cycle
@@ -299,7 +300,9 @@ class Leg:
         arrival = self.get_arrival_point(final_feet_point, final_orientation)
         start = self.relative_feet_position
 
-        self.flight = tools.flight(start, arrival, h_up, self.flight_angle, N_points)
+        print start
+        print arrival
+        self.flight = tools.flight(start, arrival, self.h_up, self.flight_angle, N_points)
         print "Final flight : {0} points for a distance of {1}, from {2} to {3}".format(len(self.flight), np.linalg.norm(arrival-start), start, arrival)
 
     def is_point_in_zone(self, point, zone_aimed):
@@ -346,11 +349,17 @@ class Leg:
             print "Intersecting {0} and {1} for leg {2}".format(final_line, entity, self.leg_id)
             intersections_tmp = [[tools.intersect(final_line, entity), entity[0]]]
             for intersection_tmp in intersections_tmp:
-                print "Tmp intersection found : {0}".format(intersection_tmp)
-                for intersection in intersection_tmp[0]:
-                    print "Considering {0} with constrains {1}".format(intersection, zone_limits)
-                    if intersection_tmp[1] == 'S' or (zone_limits[2] <= np.arctan(intersection[0]/-intersection[1]) <= zone_limits[3] and intersection[1] < 0):
-                        intersections += [intersection]
+                if len(intersection_tmp[0])==0:
+                    print "No intersection here"
+                else:
+                    print "Tmp intersection found : {0}".format(intersection_tmp)
+                    for intersection in intersection_tmp[0]:
+                        print "Considering {0} with constrains {1}".format(intersection, zone_limits)
+                        if intersection_tmp[1] == 'S' or (zone_limits[2] <= np.arctan(intersection[0]/-intersection[1]) <= zone_limits[3] and intersection[1] < 0):
+                            print "Accepted"
+                            intersections += [intersection]
+                        else:
+                            print "Rejected"
 
         if intersections != []:
             # If they were intersections, it is possible that the final point is inside this zone.
@@ -375,10 +384,13 @@ class Leg:
                 print "Intersecting {0} and {1} for leg {2}".format(final_line, entity, self.leg_id)
                 intersections_tmp = [[tools.intersect(['S', self.relative_feet_position[0:2], aimed_point], entity), entity[0]]]
                 for intersection_tmp in intersections_tmp:
-                    print "Tmp intersection found : {0}".format(intersection_tmp)
-                    for intersection in intersection_tmp[0]:
-                        if intersection_tmp[1] == 'S' or (zone_limits[2] <= np.arctan(intersection[0]/-intersection[1]) <= zone_limits[3] and intersection[1] < 0):
-                            intersections += [intersection]
+                    if len(intersection_tmp[0])==0:
+                        print "No intersection here"
+                    else:
+                        print "Tmp intersection found : {0}".format(intersection_tmp)
+                        for intersection in intersection_tmp[0]:
+                            if intersection_tmp[1] == 'S' or (zone_limits[2] <= np.arctan(intersection[0]/-intersection[1]) <= zone_limits[3] and intersection[1] < 0):
+                                intersections += [intersection]
             if len(intersections) == 0:
                 print "Failed to find an intersection point with frm value"
                 return None
