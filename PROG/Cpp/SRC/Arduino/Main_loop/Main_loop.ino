@@ -1,30 +1,18 @@
 #include <ros.h>
 #include <std_msgs/Float32.h> // For the sonar data
-//#include <std_msgs/Int16.h> // For the leg contacts data
+#include <std_msgs/String.h> // For the leg contacts data
 
 const int sonarFrontPin = 8;
-const int sonarBackPin = 9;
 
 const int legsPins[6] = {2,3,4,5,6,7};
+char legs_string[12] = "0&0&0&0&0&0";
 
 std_msgs::Float32 sonar_front_msg;
-std_msgs::Float32 sonar_back_msg;
 ros::Publisher pub_sonar_front("sonar_front", &sonar_front_msg);
-ros::Publisher pub_sonar_back("sonar_back", &sonar_back_msg);
 
-std_msgs::Float32 leg_msg_0;
-std_msgs::Float32 leg_msg_1;
-std_msgs::Float32 leg_msg_2;
-std_msgs::Float32 leg_msg_3;
-std_msgs::Float32 leg_msg_4;
-std_msgs::Float32 leg_msg_5;
+std_msgs::String legs_msg;
 
-ros::Publisher pub_leg_0("leg_contact_0", &leg_msg_0);
-ros::Publisher pub_leg_1("leg_contact_1", &leg_msg_1);
-ros::Publisher pub_leg_2("leg_contact_2", &leg_msg_2);
-ros::Publisher pub_leg_3("leg_contact_3", &leg_msg_3);
-ros::Publisher pub_leg_4("leg_contact_4", &leg_msg_4);
-ros::Publisher pub_leg_5("leg_contact_5", &leg_msg_5);
+ros::Publisher pub_legs("legs_contacts", &legs_msg);
 
 ros::NodeHandle nh;
 
@@ -45,19 +33,13 @@ void setup()
 {
   nh.initNode();
   nh.advertise(pub_sonar_front);
-  nh.advertise(pub_sonar_back);
   
   for (int leg_number = 0; leg_number < 6; leg_number++) 
   {
     pinMode(legsPins[leg_number], INPUT);
   }
   
-  nh.advertise(pub_leg_0);
-  nh.advertise(pub_leg_1);
-  nh.advertise(pub_leg_2);
-  nh.advertise(pub_leg_3);
-  nh.advertise(pub_leg_4);
-  nh.advertise(pub_leg_5);
+  nh.advertise(pub_legs);
   
   last_publish_sonars = millis()  - update_sonars_timeconstant_ms;
   last_publish_legs = millis()  - update_legs_timeconstant_ms;
@@ -85,23 +67,10 @@ void loop()
     pinMode(sonarFrontPin, INPUT);
     duration_front = pulseIn(sonarFrontPin, HIGH);
     
-    pinMode(sonarBackPin, OUTPUT);
-    digitalWrite(sonarBackPin, LOW);
-    delayMicroseconds(2);
-    digitalWrite(sonarBackPin, HIGH);
-    delayMicroseconds(5);
-    digitalWrite(sonarBackPin, LOW);
-    pinMode(sonarBackPin, INPUT);
-    duration_back = pulseIn(sonarBackPin, HIGH);
-    
     // Publishing front
     cm = microsecondsToCentimeters(duration_front);
     sonar_front_msg.data = cm;
     pub_sonar_front.publish(&sonar_front_msg);
-    //Now publishing back
-    cm = microsecondsToCentimeters(duration_back);
-    sonar_back_msg.data = cm;
-    pub_sonar_back.publish(&sonar_back_msg);
     
     last_publish_sonars = millis(); 
   }
@@ -110,30 +79,21 @@ void loop()
   if ((millis() - last_publish_legs) > update_legs_timeconstant_ms )
   {
     published = 1;
-   
-    if (digitalRead(legsPins[0]) == HIGH) {leg_msg_0.data = 1;}
-    else {leg_msg_0.data = 0;}
-    pub_leg_0.publish(&leg_msg_0);
     
-    if (digitalRead(legsPins[1]) == HIGH) {leg_msg_1.data = 1;}
-    else {leg_msg_1.data = 0;}
-    pub_leg_1.publish(&leg_msg_1);
-    
-    if (digitalRead(legsPins[2]) == HIGH) {leg_msg_2.data = 1;}
-    else {leg_msg_2.data = 0;}
-    pub_leg_2.publish(&leg_msg_2);
-    
-    if (digitalRead(legsPins[3]) == HIGH) {leg_msg_3.data = 1;}
-    else {leg_msg_3.data = 0;}
-    pub_leg_3.publish(&leg_msg_3);
-    
-    if (digitalRead(legsPins[4]) == HIGH) {leg_msg_4.data = 1;}
-    else {leg_msg_4.data = 0;}
-    pub_leg_4.publish(&leg_msg_4);
-    
-    if (digitalRead(legsPins[5]) == HIGH) {leg_msg_5.data = 1;}
-    else {leg_msg_5.data = 0;}
-    pub_leg_5.publish(&leg_msg_5);
+    if (digitalRead(legsPins[0]) == HIGH) {legs_string[0] = '1';}
+    else {legs_string[0] = '0';}    
+    if (digitalRead(legsPins[1]) == HIGH) {legs_string[2] = '1';}
+    else {legs_string[2] = '0';}
+    if (digitalRead(legsPins[2]) == HIGH) {legs_string[4] = '1';}
+    else {legs_string[6] = '0';}
+    if (digitalRead(legsPins[3]) == HIGH) {legs_string[6] = '1';}
+    else {legs_string[6] = '0';}
+    if (digitalRead(legsPins[4]) == HIGH) {legs_string[8] = '1';}
+    else {legs_string[8] = '0';}
+    if (digitalRead(legsPins[5]) == HIGH) {legs_string[10] = '1';}
+    else {legs_string[10] = '0';}
+    legs_msg.data = legs_string;
+    pub_legs.publish(&legs_msg);
     
     last_publish_legs=millis();
   }

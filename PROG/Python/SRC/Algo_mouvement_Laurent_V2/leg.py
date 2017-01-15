@@ -51,6 +51,8 @@ class Leg:
         self.side = side
         self.fix_position = fix_position
 	self.fix_angle = fix_angle
+        self.refchanging_leg_to_rob_matrix = np.array([[np.cos(fix_angle), np.sin(fix_angle), 0], [-np.sin(fix_angle), np.cos(fix_angle), 0], [0, 0, 1]])
+        self.refchanging_rob_to_leg_matrix = np.linalg.inv(self.refchanging_leg_to_rob_matrix)
         self.leg_id = leg_id
 
         self.l1 = l1
@@ -81,8 +83,8 @@ class Leg:
 
         self.R_repos = self.get_extension(self.angles)
         sBetaRmin = (self.h - np.sin(self.gammamin)*self.l3)/self.l2
-        self.Rmin = self.l1 + self.l2*np.sqrt(1-sBetaRmin**2) + self.l3*np.sin(self.gammamin)
-        self.Rmax = self.l1 + np.sqrt((self.l1+self.l2)**2-self.h**2)
+        self.Rmin = self.l1 + self.l2*np.sqrt(1-sBetaRmin**2) + self.l3*np.cos(self.gammamax)
+        self.Rmax = self.l1 + np.sqrt((self.l2+self.l3)**2-self.h**2)
 
         self.flight = None
         self.cycle_takeoff = None
@@ -101,7 +103,7 @@ class Leg:
 
         if init:
             self.h = -z
-        return([x,y,z])
+        return np.array([x,y,z])
 
     def get_extension(self, angles):
         position = self.get_position_from_angles(angles)
@@ -139,24 +141,18 @@ class Leg:
         else:
             print "Unable to find angles for leg {0} at position {1}".format(self.leg_id, self.relative_feet_position)
             return None
-    
-    def get_leg_absolute_position(self, position, orientation):
-# Function that computes the leg absolute position from the current position of the robot and the relative position of the leg in its own landmark
-# Input:
-#   Robot_object : Structure robot, that gives opsition and orientation in absolute landmark
-        if self.side == 'right':
-            return np.array(position)+np.array((tools.rotate(self.fix_position + self.relative_feet_position[0:2], orientation)).tolist() + [self.relative_feet_position[2]])
-        else:
-            return np.array(position)+np.array((tools.rotate(self.fix_position - self.relative_feet_position[0:2], orientation)).tolist() + [self.relative_feet_position[2]])
 
-    def get_leg_relative_position(self, position, orientation):
-# Opposite function to get_leg_absolute_position. Gives relative position of the leg considering its absolute position and the absolute position of the robot
-# Input:
-#   Robot_object : Structure robot, that gives opsition and orientation in absolute landmark
-        if self.side == 'right':
-            return np.array((tools.rotate(self.absolute_feet_position - position, [orientation[0], -orientation[1]]) - self.fix_position).tolist() + [self.absolute_feet_position[2]])
-        else:
-            return np.array((tools.rotate(self.absolute_feet_position - position, [orientation[0], -orientation[1]]) - self.fix_position).tolist() + [self.absolute_feet_position[2]])
+    def get_leg_absolute_position(self, robot):
+        return robot.position + robot.rotate_vector_to_absolute_from_robot(self.fix_position + self.rotate_vector_to_robot_from_leg(self.relative_feet_position))
+
+    def get_leg_relative_position(self, robot):
+        return self.rotate_vector_to_leg_from_robot(robot.rotate_vector_to_robot_from_absolute(self.absolute_feet_position - robot.position) - self.fix_position)
+
+    def rotate_vector_to_leg_from_robot(self, V):
+        return np.dot(self.refchanging_rob_to_leg_matrix,V)
+
+    def rotate_vector_to_robot_from_leg(self, V):
+        return np.dot(self.refchanging_leg_to_rob_matrix,V)
 
     def zone_presence(self):
 # Function to check in which zone the leg is or is not. 
@@ -185,10 +181,10 @@ class Leg:
     def get_corners(self, zone_name):
         Rmin, Rmax, alphamin, alphamax = self.get_min_max_values(zone_name)
 
-        return [np.array([Rmin*np.sin(alphamin), -Rmin*np.cos(alphamin)]),
-                np.array([Rmax*np.sin(alphamin), -Rmax*np.cos(alphamin)]),
-                np.array([Rmax*np.sin(alphamax), -Rmax*np.cos(alphamax)]),
-                np.array([Rmin*np.sin(alphamax), -Rmin*np.cos(alphamax)])]
+        return [np.array([Rmin*np.cos(alphamin), -Rmin*np.sin(alphamin)]),
+                np.array([Rmax*np.cos(alphamin), -Rmax*np.sin(alphamin)]),
+                np.array([Rmax*np.cos(alphamax), -Rmax*np.sin(alphamax)]),
+                np.array([Rmin*np.cos(alphamax), -Rmin*np.sin(alphamax)])]
 
     def plot_line(self, point, vector, length=10):
         '''Plots a line of total length 'length' centered in point, with a direction 'vector'
@@ -210,21 +206,24 @@ class Leg:
         pyl.plot([corners[0][0], corners[1][0]], [corners[0][1], corners[1][1]], self.zone_colors[zone_name]+'-')
         pyl.plot([corners[2][0], corners[3][0]], [corners[2][1], corners[3][1]], self.zone_colors[zone_name]+'-')
         
-        arcs_points = [np.array([Rmin*np.sin(alpha), -Rmin*np.cos(alpha)]) for alpha in np.linspace(alphamin, alphamax, N_points_arcs)]
+        arcs_points = [np.array([Rmin*np.cos(alpha), -Rmin*np.sin(alpha)]) for alpha in np.linspace(alphamin, alphamax, N_points_arcs)]
         for n_point in range(len(arcs_points)-1):
             pyl.plot([arcs_points[n_point][0], arcs_points[n_point+1][0]], [arcs_points[n_point][1], arcs_points[n_point+1][1]], self.zone_colors[zone_name]+'-')
-        arcs_points = [np.array([Rmax*np.sin(alpha), -Rmax*np.cos(alpha)]) for alpha in np.linspace(alphamin, alphamax, N_points_arcs)]
+        arcs_points = [np.array([Rmax*np.cos(alpha), -Rmax*np.sin(alpha)]) for alpha in np.linspace(alphamin, alphamax, N_points_arcs)]
         for n_point in range(len(arcs_points)-1):
             pyl.plot([arcs_points[n_point][0], arcs_points[n_point+1][0]], [arcs_points[n_point][1], arcs_points[n_point+1][1]], self.zone_colors[zone_name]+'-')
 
-    def plot_feet(self):
-        pyl.plot(self.relative_feet_position[0], self.relative_feet_position[1], 'x')
+    def plot_feet(self, ref):
+        if ref=='relative':
+            pyl.plot(self.relative_feet_position[0], self.relative_feet_position[1], 'x'+self.color)
+        elif ref == 'absolute':
+            pyl.plot(self.absolute_feet_position[0], self.absolute_feet_position[1], 'x'+self.color)
 
     def get_ratio_distance_from_zone_to_next(self, zone_in, zone_out):
         '''Computes the ratio of distances between the two - inner and outer - zones the leg is around. 
         Needs the names of these two zones'''
 
-        # Function FAILS
+        # Function FAILS maybe
         R = self.get_extension(self.angles)
         r1, r2, a1, a2 = self.get_min_max_values(zone_out)
         dmin1 = min (abs(R-r1), abs(r2-R), abs(R*(self.angles[0]-a1)), abs(R*(self.angles[0]-a2)))
