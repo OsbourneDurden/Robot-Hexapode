@@ -111,19 +111,33 @@ class Robot:
             self.compute_refchanging_rob_to_abs_matrix()
 
 
-    def get_relative_point(self, final_absolute_feet_position, final_absolute_robot_position, final_absolute_robot_rotation, leg_to_raise):
-	print final_absolute_feet_position, final_absolute_robot_position, final_absolute_robot_rotation, leg_to_raise
-        if self.Legs[leg_to_raise].side == 'left':
-            return tools.rotate(final_absolute_feet_position - final_absolute_robot_position, final_absolute_robot_rotation) - self.Legs[leg_to_raise].fix_position
-        else:
-            tmp = tools.rotate(final_absolute_feet_position - final_absolute_robot_position, final_absolute_robot_rotation) - self.Legs[leg_to_raise].fix_position
-            return np.array([tmp[0], -tmp[1], tmp[2]])
+    def get_relative_point(self, final_absolute_feet_position, flightend_absolute_robot_position, flightend_absolute_robot_orientation, leg_to_raise):
+        '''Get final_feet_position in the leg referential when the leg is supposed to land.
+        Input :
+            - final_absolute_feet_position : 3D np.array giving the absolute position of the desired point, computed at the start of the move
+            - flightend_absolute_robot_position : 3D np.array giving the absolute robot position when the leg is supposed to land
+            - flightend_absolute_robot_orientation : 3D np.array giving the absolute orientation vector of the robot when the leg is supposed to land
+            - leg_to_raise : id of the leg to be raised
+        '''
+        # We create an artefact robot to get the rotation matrices
+        robot_at_landing = Robot(artefact = True, artefact_position = flightend_absolute_robot_position, artefact_orientation = flightend_absolute_robot_orientation)
+        print final_absolute_feet_position
+        print self.Legs[leg_to_raise].fix_position - self.rotate_vector_to_robot_from_absolute(robot_at_landing.position - final_absolute_feet_position)
+        final_relative_feet_position = self.Legs[leg_to_raise].rotate_vector_to_leg_from_robot(- self.Legs[leg_to_raise].fix_position
+                                                                                               - self.rotate_vector_to_robot_from_absolute(robot_at_landing.position
+                                                                                                                                         - final_absolute_feet_position))
+        
+        return final_relative_feet_position
 
-    def get_relative_orientation(self, final_absolute_orientation, leg_to_raise):
-        if self.Legs[leg_to_raise].side == 'right':
-            return final_absolute_orientation
-        else:
-            return np.array([final_absolute_orientation[0], -final_absolute_orientation[1]])
+    def get_relative_orientation(self, flightend_absolute_robot_orientation, leg_to_raise):
+        '''Gets the orientation of the landing line in the relative referential of the leg to be raised
+        Input :
+            - flightend_absolute_orientation : 3D np.array of the orientation of the robot at the end of the flight
+            - leg_to_raise : id of the leg to be raised
+        '''
+        robot_at_landing = Robot(artefact = True, artefact_orientation = flightend_absolute_robot_orientation)
+        flightend_landingline_vector = self.Legs[leg_to_raise].rotate_vector_to_leg_from_robot(self.rotate_vector_to_robot_from_absolute(robot_at_landing.orientation))
+        return flightend_landingline_vector
 
     def compute_refchanging_rob_to_abs_matrix(self):
         A = np.sqrt(self.orientation[0]**2+self.orientation[1]**2)
@@ -152,9 +166,10 @@ class Robot:
         final_orientation = final_position-self.position
         final_orientation /= norm(final_orientation)
 
-        points_center = [0,0]
+        points_center = [0,0,0]
         points_center[0] = np.linspace(self.position[0], final_position[0], N_points)
         points_center[1] = np.linspace(self.position[1], final_position[1], N_points)
+        points_center[2] = np.linspace(self.h, self.h, N_points)
         positions = np.array(points_center)
         orientation_x = np.linspace(self.orientation[0], final_orientation[0], int(self.frm*N_points))
         orientation_y = np.linspace(self.orientation[1], final_orientation[1], int(self.frm*N_points))
@@ -180,7 +195,7 @@ class Robot:
             self.angles_history += [[]]
             self.feet_positions_history += [[]]
             # Update position for this cycle and save it
-            self.position = np.array(positions[:,cycle].tolist()+[self.h])
+            self.position = positions[:,cycle]
             self.orientation = orientations[:,cycle]
             self.history += [self.position]
             self.landmark_history += [self.current_landmark]
@@ -198,7 +213,7 @@ class Robot:
                     leg.relative_feet_position = leg.get_leg_relative_position(self) # We first update the relative position of the grounded legs
                     leg.update_angles_from_position() # We update the new angles for this relative position
                     self.angles_history[-1] += [leg.angles] 
-                    mean_alpha_move += abs(self.angles_history[-2][-1][0]-self.angles_history[-1][-1][0])
+                    mean_alpha_move += abs(self.angles_history[-2][leg.leg_id][0]-self.angles_history[-1][leg.leg_id][0])
                     self.feet_positions_history[-1] += [leg.absolute_feet_position]
 
                     leg_zones = leg.zone_presence() # Now we check the presence of the leg in the different zones
@@ -243,7 +258,7 @@ class Robot:
 
             # Now, all legs positions have been updated. We now check the demands of each leg, and update the statuses
             mean_alpha_move /= legs_down
-            print "{0} legs are on the ground after update of cycle {1}".format(legs_down, cycle)
+            print "{0} legs are on the ground after update of cycle {1}, with mean alpha move value of {2}".format(legs_down, cycle, mean_alpha_move)
 
             if demands.count(0) == self.N_legs:
                 print "Demands before alphas condition check are {0}".format(demands)
@@ -251,7 +266,7 @@ class Robot:
                 if legs_down > self.minimum_legs_down: 
                     N_legs_sameside = 0
                     for leg in self.Legs:
-                        if (leg.side == 'right' and leg.angles[0] > self.alpha_margin_sameside) or (leg.side == 'left' and leg.angles[0] < self.alpha_margin_sameside):
+                        if (leg.side == 'right' and leg.angles[0] < self.alpha_margin_sameside) or (leg.side == 'left' and leg.angles[0] > self.alpha_margin_sameside):
                             N_legs_sameside += 1
                     if N_legs_sameside > self.max_sameside_leg_number:
                         # and they are too many legs on the same negative side and too many are on the floor
@@ -304,7 +319,6 @@ class Robot:
                             else:
                                 ratios += [0]
                         leg_to_raise = ratios.index(max(ratios))
-                    #self.schedule_flight(demands.index(max(demands)), points_center, orientation, mean_alpha_move, cycle)
             else:
                 leg_to_raise = None
 

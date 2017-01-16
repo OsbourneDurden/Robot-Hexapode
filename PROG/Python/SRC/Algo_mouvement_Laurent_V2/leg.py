@@ -51,7 +51,7 @@ class Leg:
         self.side = side
         self.fix_position = fix_position
 	self.fix_angle = fix_angle
-        self.refchanging_leg_to_rob_matrix = np.array([[np.cos(fix_angle), np.sin(fix_angle), 0], [-np.sin(fix_angle), np.cos(fix_angle), 0], [0, 0, 1]])
+        self.refchanging_leg_to_rob_matrix = np.array([[np.cos(fix_angle), -np.sin(fix_angle), 0], [np.sin(fix_angle), np.cos(fix_angle), 0], [0, 0, 1]])
         self.refchanging_rob_to_leg_matrix = np.linalg.inv(self.refchanging_leg_to_rob_matrix)
         self.leg_id = leg_id
 
@@ -284,11 +284,11 @@ class Leg:
         Input :
             cycle : cycle number at the start of the flight
             final_feet_point : 3-dimensional np.array vector containing the relative position of the feet when the move is over AT THE END OF THE FLIGHT.
-            final_orientation : 2-D vector containing the final (relative) orientation of the robot AT THE END OF THE FLIGHT.
+            final_orientation : 3-D vector containing the final (relative) orientation of the robot AT THE END OF THE FLIGHT.
             N_points : number of points this flight should contain'''
 
         print "Initiating flight with parameters {0}, {1}, {2}, {3}".format(cycle, final_feet_point, final_orientation, N_points)
-        self.create_flight(final_feet_point, final_orientation, N_points)
+        self.create_flight(final_feet_point[:2], final_orientation[:2], N_points)
         self.status = 'up'
         self.cycle_takeoff = cycle
 
@@ -377,9 +377,12 @@ class Leg:
                 return np.array(final_feet_point.tolist() + [-self.h])
             else:
                 # If it is not, we aim for the closest point to this final point that intersect zone_aimed
+                print "Final point not in zone. Aiming closest to {0} between intersections_found : {1}".format(final_feet_point, intersections)
                 norms=[np.linalg.norm(intersection - final_feet_point) for intersection in intersections]
-                print "Final point not in zone. Aiming closest {0}".format(final_feet_point)
-                return np.array(intersections[norms.index(min(norms))].tolist() + [-self.h])
+                print "Computed norms : {0}".format(norms)
+                elected_point = np.array(intersections[norms.index(min(norms))].tolist() + [-self.h])
+                print "Elected point {0} for landing".format(elected_point)
+                return elected_point
         else:
             print "No final line intersection found"
             intersections = []
