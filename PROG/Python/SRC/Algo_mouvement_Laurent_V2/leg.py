@@ -33,7 +33,7 @@ import matplotlib.pylab as pyl
 
 
 class Leg:
-    def __init__(self, leg_id, fix_position, fix_angle, side, alpha_data, beta_data, gamma_data, l1, l2, l3, landing, envy, need, speed_ratio, up_down_ratio, flight_angle, frm, color):
+    def __init__(self, leg_id, neighbours, fix_position, fix_angle, side, alpha_data, beta_data, gamma_data, l1, l2, l3, landing, envy, need, speed_ratio, up_down_ratio, flight_angle, frm, color):
         self.alphamin = alpha_data[0]
         self.alphamax = alpha_data[1]
         self.alpharepos = alpha_data[2]
@@ -54,6 +54,8 @@ class Leg:
         self.refchanging_leg_to_rob_matrix = np.array([[np.cos(fix_angle), -np.sin(fix_angle), 0], [np.sin(fix_angle), np.cos(fix_angle), 0], [0, 0, 1]])
         self.refchanging_rob_to_leg_matrix = np.linalg.inv(self.refchanging_leg_to_rob_matrix)
         self.leg_id = leg_id
+
+        self.neighbours = neighbours
 
         self.l1 = l1
         self.l2 = l2
@@ -78,7 +80,7 @@ class Leg:
         self.relative_feet_position = self.get_position_from_angles(self.angles, init=True)
         self.absolute_feet_position = None
         self.h_up = self.h*up_down_ratio
-        self.flight_angle = flight_angle
+        self.flight_angle = flight_angle # Currently unused
         self.frm = frm
 
         self.R_repos = self.get_extension(self.angles)
@@ -118,17 +120,19 @@ class Leg:
         R = np.sqrt(x**2+y**2)
         alpha = np.arctan(y/x)
                 
-        try:
+        if 1:
             theta = math.acos(((R-self.l1)**2 + z**2 + self.l2**2 - self.l3**2)
                     /(2 * self.l2 * np.sqrt((R-self.l1)**2 + z**2)))
             theta2 = -math.atan((R-self.l1)/z) #possible "-"z missing
-            U = (theta + theta2)
-            phi = math.acos(((R-self.l1)**2 + z**2 + self.l3**2 - self.l2**2)
-                    /(2 * self.l3 * np.sqrt((R-self.l1)**2 + z**2)))
-            phi2 = math.atan(z/(R-self.l1))
-            V = np.pi/2 - (phi + phi2)
-            return [alpha, (V-U)/2, (V+U)/2]
-        except:
+
+            beta = np.pi/2-(theta+theta2)
+            if R > self.l1 + np.cos(beta)*self.l2:
+                gamma = np.arcsin((np.abs(z)-self.l2*np.sin(np.pi/2-(theta+theta2)))/self.l3)
+            else:
+                gamma = np.pi - np.arcsin((np.abs(z)-self.l2*np.sin(np.pi/2-(theta+theta2)))/self.l3)
+
+            return [alpha, beta, gamma]
+        else:
             return None
 
     def update_angles_from_position(self):
@@ -140,6 +144,7 @@ class Leg:
             return None
         else:
             print "Unable to find angles for leg {0} at position {1}".format(self.leg_id, self.relative_feet_position)
+            sys.exit("lol")
             return None
 
     def get_leg_absolute_position(self, robot):
@@ -219,15 +224,24 @@ class Leg:
         elif ref == 'absolute':
             pyl.plot(self.absolute_feet_position[0], self.absolute_feet_position[1], 'x'+self.color)
 
+    def has_neighbour_up(self, robot):
+        '''Function to study which legs are up, and thus which legs are allowed to be raise:
+        Input :
+            - robot : Class robot describing the current robot master
+        '''
+        for neighbour_id in self.neighbours:
+            if robot.Legs[neighbour_id].status == 'up':
+                return True
+        return False
+
     def get_ratio_distance_from_zone_to_next(self, zone_in, zone_out):
         '''Computes the ratio of distances between the two - inner and outer - zones the leg is around. 
         Needs the names of these two zones'''
 
-        # Function FAILS maybe
+        # Function FAILS maybe. Apparently not but weird
         R = self.get_extension(self.angles)
         r1, r2, a1, a2 = self.get_min_max_values(zone_out)
-        dmin1 = min (abs(R-r1), abs(r2-R), abs(R*(self.angles[0]-a1)), abs(R*(self.angles[0]-a2)))
-        #print "Distance to {0} : {1}".format(zone_out, dmin1)
+        dmin1 = min (np.abs(R-r1), np.abs(r2-R), np.abs(R*(self.angles[0]-a1)), np.abs(R*(self.angles[0]-a2)))
         r1, r2, a1, a2 = self.get_min_max_values(zone_in)
         micro_zone_value = 0
         if not r1<R<r2:
@@ -244,7 +258,6 @@ class Leg:
         else:
             print "Zone_in {0} is actually outer for leg {1} and relative_feet_position {2} ! Weird".format(zone_in, self.leg_id, self.relative_feet_position)
             sys.exit('Error 2547813')
-        #print "Distance to {0} : {1}".format(zone_in, dmin2)
         return dmin2/(dmin1 + dmin2)
 
     def extend_flight(self):
@@ -272,11 +285,12 @@ class Leg:
         if cycle != None:
             if cycle-self.cycle_takeoff == len(self.flight):
                 self.status='down'
-                print "Leg {0} landed".forma(self.leg_id)
+                print "Leg {0} landed".format(self.leg_id)
+                
         else:
             if self.contact == True:
                 self.status='down'
-                print "Leg {0} landed".forma(self.leg_id)
+                print "Leg {0} landed".format(self.leg_id)
 
     def initiate_flight(self, cycle, final_feet_point, final_orientation, N_points):
         '''Function to initiate a flight of the considered leg.
@@ -306,9 +320,7 @@ class Leg:
         arrival = self.get_arrival_point(final_feet_point, final_orientation)
         start = self.relative_feet_position
 
-        print start
-        print arrival
-        self.flight = tools.flight(start, arrival, self.h_up, self.flight_angle, N_points)
+        self.flight = tools.flight(start, arrival, self.h_up, N_points)
         print "Final flight : {0} points for a distance of {1}, from {2} to {3}".format(len(self.flight), np.linalg.norm(arrival-start), start, arrival)
 
     def is_point_in_zone(self, point, zone_aimed):
@@ -327,7 +339,7 @@ class Leg:
         else:
             return False
 
-    def get_arrival_point(self, final_feet_point, final_orientation, zone_aimed = 'need'):
+    def get_arrival_point(self, final_feet_point, final_orientation, zone_aimed = 'envy'):
         '''Computes the landing point of a leg depending of the final point this leg should be on at the very end.
         Needs the final position of this leg and the final orientation of the robot
         Input :
@@ -361,7 +373,7 @@ class Leg:
                     print "Tmp intersection found : {0}".format(intersection_tmp)
                     for intersection in intersection_tmp[0]:
                         print "Considering {0} with constrains {1}".format(intersection, zone_limits)
-                        if intersection_tmp[1] == 'S' or (zone_limits[2] <= np.arctan(intersection[0]/-intersection[1]) <= zone_limits[3] and intersection[1] < 0):
+                        if intersection_tmp[1] == 'S' or (zone_limits[2] <= np.arctan(intersection[1]/-intersection[0]) <= zone_limits[3] and intersection[0] > 0):
                             print "Accepted"
                             intersections += [intersection]
                         else:

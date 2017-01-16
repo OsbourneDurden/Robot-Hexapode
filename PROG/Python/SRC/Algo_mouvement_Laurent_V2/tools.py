@@ -87,27 +87,61 @@ def intersect(A, B):
             return []
         return [objectA[1] + l1*u1] 
     
-def flight(I, F, h_up, flight_angle, n_points):
+def flight(I, F, h_up, n_points):
     '''Creates a trajectory to be followed going through I and F, with a departure angle of flight_angle and going up to h_up higher than the highest point between I and F.
     TODO : Works by iteration, can probably be optimized to set max height more intelligently
     WARNING : Stability not asserted. Looks like it works...
     Input :
-        - I : 2D array-like being the start of the flight
-        - F : 2D array-like being the end of the flight
-        - h_up : heigth of the flight
-        - flight_angle : angle for takeoff. Landing must be vertical since we have less clue about height of this landing.
+        - I : 3D array-like being the start of the flight
+        - F : 3D array-like being the end of the flight
+        - h_up : minimal heigth of the flight
         - n_points : number of points for this flight
     '''
-    max_tries = 10
-    height_ref = max(I[1], F[1])
-    n = 1
-    P1 = I+n*np.array([np.cos(flight_angle), np.sin(flight_angle)])
-    P2 = F+n*np.array([0., 1.])
-    t = np.linspace(0, 1, n_points)
-    B = reshape(kron((1-t)**3,I), (100,2)) + 3*reshape(kron(t*(1-t)**2, P1), (100,2)) + 3*reshape(kron((1-t)*t**2, P2), (100,2)) + reshape(kron(t**3, F), (100,2))
-    for n_try in range(max_tries):
-        n /= exp((1./h_up)*(max(B[:,1])-height_ref-h_up))
-        P2 = F+n*np.array([0., 1.])
-        plot(B[:,0], B[:,1])
-        B = reshape(kron((1-t)**3,I), (100,2)) + 3*reshape(kron(t*(1-t)**2, P1), (100,2)) + 3*reshape(kron((1-t)*t**2, P2), (100,2)) + reshape(kron(t**3, F), (100,2))
-    return B
+    # We start by putting both points at the same height
+    if I[2] < F[2]: # If the arrival point is above the takeoff point, we use an intermidiate point being at the vertical of I
+        Cstart = [I[0], I[1], F[2]]
+        Cend = F
+        height_compensation = np.abs(F[2]-I[2])
+        comp_type = "first"
+    elif I[2] < F[2]:
+        Cstart = I
+        Cend = [F[0], F[1], I[2]]
+        height_compensation = np.abs(F[2]-I[2])
+        comp_type = "last"
+    else:
+        Cstart = I
+        Cend = F
+        height_compensation = 0
+        n_points_compensation = 0
+        comp_type = "none"
+    print "Compensation of {0} as type {1}".format(height_compensation, comp_type)
+
+    # Now we start computing the differents values useful for the flight
+    D = np.linalg.norm(Cend-Cstart)
+    R  = ((D/2)**2 + h_up**2)/(2*h_up)
+    C = (Cstart+Cend)/2 - (R - h_up)*np.array([0,0,1])
+    thetamax = np.arccos(np.dot(Cstart-C, Cend-C)/R**2)
+
+    L = R*thetamax
+    print "Flight computation parameters : D = {0}, R = {1}, C = {2}, thetamax = {3}, L = {4}".format(D, R, C, thetamax, L)
+    if comp_type != "none":
+        n_points_compensation = max(1,int(n_points*(height_compensation/(height_compensation + L))))
+
+    points = [I]
+    if height_compensation == "first":
+        points += [np.array([x,y,z]) for x,y,z in zip(np.linspace(I[0], Cstart[0], n_points_compensation), np.linspace(I[1], Cstart[1], n_points_compensation), np.linspace(I[2], Cstart[2], n_points_compensation))]
+
+    u = np.cross(np.array([0,0,1]), (Cend-Cstart)/D)
+    for theta in np.linspace(0, thetamax, n_points - n_points_compensation):
+        c = np.cos(theta)
+        s = np.sin(theta)
+        rotation_matrix = np.array([[c + (1-c)*u[0]**2, u[0]*u[1]*(1-c) - u[2]*s, u[0]*u[2]*(1-c) + u[1]*s],
+                                    [u[0]*u[1]*(1-c) + u[2]*s, c + (1-c)*u[1]**2, u[1]*u[2]*(1-c) - u[0]*s],
+                                    [u[0]*u[2]*(1-c) - u[1]*s, u[1]*u[2]*(1-c) + u[0]*s, c + (1-c)*u[2]**2]])
+        points += [C + np.dot(rotation_matrix, (Cstart-C))]
+
+    if height_compensation == "last":
+        points += [np.array([x,y,z]) for x,y,z in zip(np.linspace(Cend[0], F[0], n_points_compensation), np.linspace(Cend[1], F[1], n_points_compensation), np.linspace(Cend[2], F[2], n_points_compensation))]
+
+    print "FInal flight generated : {0}".format(points)
+    return points

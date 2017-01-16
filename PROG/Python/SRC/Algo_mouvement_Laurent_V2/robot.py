@@ -2,16 +2,19 @@ from leg import *
 import numpy as np
 
 class Robot:
-    def __init__(self, N_legs = 6, l1 = 0.5, l2 = 1., l3=1., l = 0.7, L = 3.7, minimum_legs_down = 4, max_sameside_leg_number = 4, alpha_margin_sameside = np.pi/40, frm = 0.1, srud =8., udhr = 0.1, flight_angle = pi/4, artefact=False, artefact_position = None, artefact_orientation = None):
+    def __init__(self, N_legs = 6, l1 = 0.5, l2 = 1., l3=1., l = 0.7, L = 3.7, minimum_legs_down = 4, taxiway_delay_cycles = 5, max_sameside_leg_number = 4, alpha_margin_sameside = np.pi/40, frm = 0.1, srud =30., udhr = 0.1, flight_angle = pi/4, artefact=False, artefact_position = None, artefact_orientation = None):
         if not artefact:
             # All length units here are in arbitrary units. 
             self.N_legs = N_legs # Number of leg in this model
             self.artefact = False
 
+
             # RULES DEFINITIONS
             self.minimum_legs_down = minimum_legs_down # Minimum number of leg on the ground at all cycles to ensure bearing
             self.max_sameside_leg_number = max_sameside_leg_number # Max number of leg that can be on the same side
             self.alpha_margin_sameside =  alpha_margin_sameside # Margin allowed to avoid any issue around all alphas = 0
+            self.taxiway_delay_cycles = taxiway_delay_cycles
+            self.last_takeoff = -taxiway_delay_cycles
             
             self.l = l # Width of the body
             self.L = L # Length of the body
@@ -20,7 +23,8 @@ class Robot:
             # Variables defining the history of the robot.
             self.history = []
             self.angles_history = []
-            self.feet_positions_history = []
+            self.absolute_feet_positions_history = []
+            self.relative_feet_positions_history = []
             self.landmark_history = [] # List of landmark changes
             
             # Values to define the leg demands zones (see leg.py). Keep the order need < envy (< landing, to be removed).
@@ -31,8 +35,8 @@ class Robot:
             
             # Definition of allowed and default leg angles. Alpha is the horizontal rotation angle, Beta is the first vertical rotation  angle and gamma is the second one.
             # Xrepos is the default value chosen.
-            alphamax = np.pi/6
-            alphamin = -np.pi/6
+            alphamax = np.pi/4
+            alphamin = -np.pi/4
             alpharepos = 0.
             alphadiff = alphamax - alphamin
             
@@ -55,6 +59,7 @@ class Robot:
             legs_fix_angles = [-np.pi/4, -np.pi/2, -3*np.pi/4, np.pi/4, np.pi/2, 3*np.pi/4]
             for i in range(len(legs_fix)):
                 legs_fix[i] = np.array(legs_fix[i])
+            legs_neighbours = [[1,3], [0,2,4], [1,5], [0,4], [1,3,5],[2,4]]
                 
             h_mean = 0
             self.Legs= []
@@ -65,6 +70,7 @@ class Robot:
                 else:
                     side= 'left'
                 self.Legs += [Leg(n_leg, 
+                    legs_neighbours[n_leg],
                     legs_fix[n_leg], 
                     legs_fix_angles[n_leg],
                     side, 
@@ -98,11 +104,12 @@ class Robot:
             for leg in self.Legs:
                 self.angles_history[-1] += [leg.angles]
                 
-            self.feet_positions_history += [[]]
+            self.absolute_feet_positions_history += [[]]
+            self.relative_feet_positions_history += [[]]
             for leg in self.Legs:
                 leg.absolute_feet_position = leg.get_leg_absolute_position(self)
-                print leg.absolute_feet_position
-                self.feet_positions_history[-1] += [leg.absolute_feet_position]
+                self.absolute_feet_positions_history[-1] += [leg.absolute_feet_position]
+                self.relative_feet_positions_history[-1] += [leg.relative_feet_position]
         else:
             # The artefact option allows to create a fake robot to use in the different routines, for example in leg.get_leg_absolute_position
             self.artefact = True
@@ -121,8 +128,6 @@ class Robot:
         '''
         # We create an artefact robot to get the rotation matrices
         robot_at_landing = Robot(artefact = True, artefact_position = flightend_absolute_robot_position, artefact_orientation = flightend_absolute_robot_orientation)
-        print final_absolute_feet_position
-        print self.Legs[leg_to_raise].fix_position - self.rotate_vector_to_robot_from_absolute(robot_at_landing.position - final_absolute_feet_position)
         final_relative_feet_position = self.Legs[leg_to_raise].rotate_vector_to_leg_from_robot(- self.Legs[leg_to_raise].fix_position
                                                                                                - self.rotate_vector_to_robot_from_absolute(robot_at_landing.position
                                                                                                                                          - final_absolute_feet_position))
@@ -193,7 +198,8 @@ class Robot:
 
             # We set the different history variables for this cycle
             self.angles_history += [[]]
-            self.feet_positions_history += [[]]
+            self.absolute_feet_positions_history += [[]]
+            self.relative_feet_positions_history += [[]]
             # Update position for this cycle and save it
             self.position = positions[:,cycle]
             self.orientation = orientations[:,cycle]
@@ -213,8 +219,9 @@ class Robot:
                     leg.relative_feet_position = leg.get_leg_relative_position(self) # We first update the relative position of the grounded legs
                     leg.update_angles_from_position() # We update the new angles for this relative position
                     self.angles_history[-1] += [leg.angles] 
-                    mean_alpha_move += abs(self.angles_history[-2][leg.leg_id][0]-self.angles_history[-1][leg.leg_id][0])
-                    self.feet_positions_history[-1] += [leg.absolute_feet_position]
+                    mean_alpha_move += np.abs(self.angles_history[-2][leg.leg_id][0]-self.angles_history[-1][leg.leg_id][0])
+                    self.absolute_feet_positions_history[-1] += [leg.absolute_feet_position]
+                    self.relative_feet_positions_history[-1] += [leg.relative_feet_position]
 
                     leg_zones = leg.zone_presence() # Now we check the presence of the leg in the different zones
                     if leg_zones['envy'] == True:
@@ -224,7 +231,7 @@ class Robot:
                         demands += [1]
                     elif leg_zones['need'] == False and leg_zones['critical'] == True:
                         print "Relative distance from need to critical for leg {1} : {0}".format(leg.get_ratio_distance_from_zone_to_next('need', 'critical'), leg.leg_id)
-                        demands += [1]
+                        demands += [2]
                     elif leg_zones['critical'] == False:
                         print "Leg {0} passed critical boundary !".format(leg.leg_id)
                         sys.exit('Error 2893254')
@@ -238,19 +245,22 @@ class Robot:
                     else:
                         leg.extend_flight()
                     
-                    leg.absolute_position = leg.get_leg_absolute_position(self.position, self.orientation)
+                    leg.absolute_feet_position = leg.get_leg_absolute_position(self)
+                    print "New absolute position of leg {0} : {1}".format(leg.leg_id,  leg.absolute_feet_position)
                     
-                    self.feet_positions_history[-1] += [leg.absolute_feet_position]
+                    self.absolute_feet_positions_history[-1] += [leg.absolute_feet_position]
+                    self.relative_feet_positions_history[-1] += [leg.relative_feet_position]
                     self.angles_history[-1] += [leg.angles] 
                     leg.check_landing(cycle)
                     demands += [0]
 
                 elif leg.status == 'end': # If the leg reached its final position. Basically here we only do data saving
                     legs_down += 1
-                    leg.relative_feet_position = leg.get_leg_relative_position(self.position, self.orientation)
+                    leg.relative_feet_position = leg.get_leg_relative_position(self)
                     leg.update_angles_from_position()
                     self.angles_history[-1] += [leg.angles] 
-                    self.feet_positions_history[-1] += [leg.absolute_feet_position]
+                    self.absolute_feet_positions_history[-1] += [leg.absolute_feet_position]
+                    self.relative_feet_positions_history[-1] += [leg.relative_feet_position]
 
                     demands += [0]
                 else:
@@ -272,12 +282,15 @@ class Robot:
                         # and they are too many legs on the same negative side and too many are on the floor
                         distances = []
                         for leg in self.Legs:
-                            if leg.angles[0] < 0 and leg.status == 'down':
+                            if (leg.status == 'down' 
+                                and not leg.has_neighbour_up(self) 
+                                and ((leg.side == 'right' and leg.angles[0] < self.alpha_margin_sameside) 
+                                        or (leg.side == 'left' and leg.angles[0] > self.alpha_margin_sameside))): # The potential candidates are the ones down, with no neighbour in the air and breaking the alpha condition.
                                 distances += [leg.get_ratio_distance_from_zone_to_next('center', 'envy')]
                             else:
                                 distances += [0]
-                        print "Too many legs found backwards. Maximum distance found for leg {0} at value {1}".format(distances.index(max(distances)), max(distances))
-                        demands[distances.index(max(distances))] = 1
+                        print "Too many legs found backwards. Maximum distance found for leg {0} at value {1}".format(distances.index(np.max(distances)), np.max(distances))
+                        demands[distances.index(np.max(distances))] = 1
 
                 elif  (np.array(R.angles_history[0])[:,0] > 0).sum() > self.max_sameside_leg_number:
                     # and they are too many legs on the same positive side, meaning we moved forward too many of them !
@@ -287,17 +300,18 @@ class Robot:
                         
             if sum(demands)>0:
                 # If at least one leg asked for takeoff
-                if demands.count(max(demands)) == 1:
+                if demands.count(np.max(demands)) == 1:
                     # If the higher demand was asked once, then it is the only priority and it is selected
-                    leg_to_raise = demands.index(max(demands))
+                    leg_to_raise = demands.index(np.max(demands))
                 else:
                     # Else it means we have a conflict we must solve
                     N_zones=[]
                     for leg in self.Legs:
-                        if demands[leg.leg_id] == max(demands):
+                        if demands[leg.leg_id] == np.max(demands):
                             N_zones += [leg.zone_presence().values().count(True)]
                         else:
                             N_zones += [10]
+                    print N_zones
                     if N_zones.count(min(N_zones)) == 1:
                         # Here we look for the minimum of zone presence. A leg only inside critical boundaries will have N_zones=1. If this minimum is reached only once, then we select it
                         leg_to_raise = N_zones.index(min(N_zones))
@@ -305,7 +319,7 @@ class Robot:
                         # If once again, we have a conflict, we must go one step further and check the maximum ratio distance
                         ratios = []
                         for leg in self.Legs:
-                            if N_zones[leg.leg_id] == max(N_zones):
+                            if leg.status == 'down' and N_zones[leg.leg_id] == min(N_zones):
                                 # If this leg was asking to go up
                                 if not leg.zone_presence()['need']:
                                     # If it is between need and critical (thus it is not inside the "need" boundaries anymore)
@@ -318,13 +332,23 @@ class Robot:
                                         ratios += [leg.get_ratio_distance_from_zone_to_next('center', 'envy')]
                             else:
                                 ratios += [0]
-                        leg_to_raise = ratios.index(max(ratios))
+                        leg_to_raise = ratios.index(np.max(ratios))
             else:
                 leg_to_raise = None
 
             if leg_to_raise == None:
                 print "No leg to be raised at the end of cycle {0}".format(cycle)
             else:
-                print "Leg {0} is going to be raised at the end of cycle {1}".format(leg_to_raise, cycle)
-                N_points = self.get_flight_length(leg_to_raise, mean_alpha_move)
-                self.Legs[leg_to_raise].initiate_flight(cycle, self.get_relative_point(final_feet_positions[leg_to_raise], positions[:,cycle+N_points], orientations[:,cycle+N_points], leg_to_raise), self.get_relative_orientation(orientations[:,cycle+N_points], leg_to_raise), N_points)
+                if not self.Legs[leg_to_raise].has_neighbour_up(self) and legs_down > self.minimum_legs_down and (2 in demands or cycle-self.last_takeoff > self.taxiway_delay_cycles):
+                    print "Leg {0} is going to be raised at the end of cycle {1}".format(leg_to_raise, cycle)
+                    N_points = self.get_flight_length(leg_to_raise, mean_alpha_move)
+                    self.Legs[leg_to_raise].initiate_flight(cycle, self.get_relative_point(final_feet_positions[leg_to_raise], positions[:,cycle+N_points], orientations[:,cycle+N_points], leg_to_raise), self.get_relative_orientation(orientations[:,cycle+N_points], leg_to_raise), N_points)
+                    self.last_takeoff = cycle
+                else:
+                    print "Leg {0} should takeoff but current conditions forbid it. Reason :".format(leg_to_raise)
+                    if self.Legs[leg_to_raise].has_neighbour_up(self):
+                        print "Neighbour currently in the air"
+                    if legs_down <= self.minimum_legs_down:
+                        print "Too many legs in the air"
+                    if cycle-self.last_takeoff > self.taxiway_delay_cycles:
+                        print "Must wait {0} cycles before possible takeoff".format(-(cycle-self.last_takeoff) + self.taxiway_delay_cycles)
