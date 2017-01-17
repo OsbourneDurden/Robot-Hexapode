@@ -160,6 +160,48 @@ class Robot:
     def get_flight_length(self, leg_to_raise, mean_alpha_move):
         return int((self.Legs[leg_to_raise].alphamax-self.Legs[leg_to_raise].alphamin)/(mean_alpha_move*self.srud))
 
+    def close_flights(self, cycle_end):
+        '''Routine to end all flights and land the legs still in the air'''
+        n_legs_up = 0
+        for leg in self.Legs:
+            if leg.status == 'up':
+                n_legs_up += 1
+        print "Print closing flight. Still {0} to land".format(n_legs_up)
+        while n_legs_up > 0:
+            cycle_end += 1
+            # We set the different history variables for this cycle
+            self.angles_history += [[]]
+            self.absolute_feet_positions_history += [[]]
+            self.relative_feet_positions_history += [[]]
+            # Update position for this cycle and save it
+            self.history += [self.position]
+            self.landmark_history += [self.current_landmark]
+
+            for leg in self.Legs:
+                if leg.status == 'down': # If the leg is currently on the ground
+                    self.angles_history[-1] += [leg.angles] 
+                    self.absolute_feet_positions_history[-1] += [leg.absolute_feet_position]
+                    self.relative_feet_positions_history[-1] += [leg.relative_feet_position]
+                else:
+                    if (cycle_end - leg.cycle_takeoff) <= len(leg.flight)-1:
+                        leg.follow_flight(cycle_end)
+                    else:
+                        leg.extend_flight()
+                    
+                    leg.absolute_feet_position = leg.get_leg_absolute_position(self)
+                    print "New absolute position of leg {0} : {1}".format(leg.leg_id,  leg.absolute_feet_position)
+                    
+                    self.absolute_feet_positions_history[-1] += [leg.absolute_feet_position]
+                    self.relative_feet_positions_history[-1] += [leg.relative_feet_position]
+                    self.angles_history[-1] += [leg.angles] 
+                    leg.check_landing(cycle_end)
+                    if leg.status == 'down':
+                        n_legs_up -= 1
+
+
+        print "All legs landed at final cycle {0}.".format(cycle_end)
+
+
     def move_to(self, final_position, N_points = 500, rotation_factor = 0.1):
         '''
         Function to move the robot.
@@ -254,17 +296,18 @@ class Robot:
                     leg.check_landing(cycle)
                     demands += [0]
 
-                elif leg.status == 'end': # If the leg reached its final position. Basically here we only do data saving
-                    legs_down += 1
-                    leg.relative_feet_position = leg.get_leg_relative_position(self)
-                    leg.update_angles_from_position()
-                    self.angles_history[-1] += [leg.angles] 
-                    self.absolute_feet_positions_history[-1] += [leg.absolute_feet_position]
-                    self.relative_feet_positions_history[-1] += [leg.relative_feet_position]
-
-                    demands += [0]
+#                elif leg.status == 'end': # If the leg reached its final position. Basically here we only do data saving
+#                    legs_down += 1
+#                    leg.relative_feet_position = leg.get_leg_relative_position(self)
+#                    leg.update_angles_from_position()
+#                    self.angles_history[-1] += [leg.angles] 
+#                    self.absolute_feet_positions_history[-1] += [leg.absolute_feet_position]
+#                    self.relative_feet_positions_history[-1] += [leg.relative_feet_position]
+#
+#                    demands += [0]
                 else:
                     print "Unknown status for leg {0} : {1}".format(leg.leg_id, leg.status)
+                    sys.exit("Error 2548731")
 
             # Now, all legs positions have been updated. We now check the demands of each leg, and update the statuses
             mean_alpha_move /= legs_down
@@ -341,8 +384,13 @@ class Robot:
             else:
                 if not self.Legs[leg_to_raise].has_neighbour_up(self) and legs_down > self.minimum_legs_down and (2 in demands or cycle-self.last_takeoff > self.taxiway_delay_cycles):
                     print "Leg {0} is going to be raised at the end of cycle {1}".format(leg_to_raise, cycle)
-                    N_points = self.get_flight_length(leg_to_raise, mean_alpha_move)
-                    self.Legs[leg_to_raise].initiate_flight(cycle, self.get_relative_point(final_feet_positions[leg_to_raise], positions[:,cycle+N_points], orientations[:,cycle+N_points], leg_to_raise), self.get_relative_orientation(orientations[:,cycle+N_points], leg_to_raise), N_points)
+                    N_points_flight = self.get_flight_length(leg_to_raise, mean_alpha_move)
+                    if cycle+N_points_flight > N_points-1:
+                        N_points_aimed = N_points_flight 
+                        N_points_flight = (N_points-1)-cycle
+                    else:
+                        N_points_aimed = N_points_flight
+                    self.Legs[leg_to_raise].initiate_flight(cycle, self.get_relative_point(final_feet_positions[leg_to_raise], positions[:,cycle+N_points_flight], orientations[:,cycle+N_points_flight], leg_to_raise), self.get_relative_orientation(orientations[:,cycle+N_points_flight], leg_to_raise), N_points_flight, N_points_aimed)
                     self.last_takeoff = cycle
                 else:
                     print "Leg {0} should takeoff but current conditions forbid it. Reason :".format(leg_to_raise)
@@ -352,3 +400,4 @@ class Robot:
                         print "Too many legs in the air"
                     if cycle-self.last_takeoff > self.taxiway_delay_cycles:
                         print "Must wait {0} cycles before possible takeoff".format(-(cycle-self.last_takeoff) + self.taxiway_delay_cycles)
+        self.close_flights(cycle)

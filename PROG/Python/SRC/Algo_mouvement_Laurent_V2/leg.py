@@ -121,9 +121,10 @@ class Leg:
         alpha = np.arctan(y/x)
                 
         if 1:
-            theta = math.acos(((R-self.l1)**2 + z**2 + self.l2**2 - self.l3**2)
+            print R, z, 
+            theta = np.arccos(((R-self.l1)**2 + z**2 + self.l2**2 - self.l3**2)
                     /(2 * self.l2 * np.sqrt((R-self.l1)**2 + z**2)))
-            theta2 = -math.atan((R-self.l1)/z) #possible "-"z missing
+            theta2 = -np.arctan((R-self.l1)/z) #possible "-"z missing
 
             beta = np.pi/2-(theta+theta2)
             if R > self.l1 + np.cos(beta)*self.l2:
@@ -292,17 +293,18 @@ class Leg:
                 self.status='down'
                 print "Leg {0} landed".format(self.leg_id)
 
-    def initiate_flight(self, cycle, final_feet_point, final_orientation, N_points):
+    def initiate_flight(self, cycle, final_feet_point, final_orientation, N_points, N_points_aimed):
         '''Function to initiate a flight of the considered leg.
         Should contain all the variables changes, the call for this function should be enough for the leg to move on later cycles.
         Input :
             cycle : cycle number at the start of the flight
             final_feet_point : 3-dimensional np.array vector containing the relative position of the feet when the move is over AT THE END OF THE FLIGHT.
             final_orientation : 3-D vector containing the final (relative) orientation of the robot AT THE END OF THE FLIGHT.
-            N_points : number of points this flight should contain'''
+            N_points : number of points this flight should contain
+            N_points_aimed : theoretical number of points the flight should have, if for example the flight was programmed at the very end of the move'''
 
-        print "Initiating flight with parameters {0}, {1}, {2}, {3}".format(cycle, final_feet_point, final_orientation, N_points)
-        self.create_flight(final_feet_point[:2], final_orientation[:2], N_points)
+        print "Initiating flight with parameters {0}, {1}, {2}, {3}".format(cycle, final_feet_point, final_orientation, N_points_aimed)
+        self.create_flight(final_feet_point[:2], final_orientation[:2], N_points_aimed)
         self.status = 'up'
         self.cycle_takeoff = cycle
 

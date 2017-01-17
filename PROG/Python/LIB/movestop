@@ -37,21 +37,19 @@ class Robot_control:
         self.angles_off=angles_off
         self.direction=direction
         self.angles_check=angles_check
-        self.pub = rospy.Publisher('angle', 'numpy.ndarray',queue_size =1)
+        self.pub = rospy.Publisher('angle', Int64MultiArray,queue_size =1)
         self.pub2 = rospy.Publisher('cmd', String ,queue_size =1)
         
-        self.subscriber = rospy.Subscriber('cmd', Sring, self.update_cmd)
+        self.subscriber_cmd = rospy.Subscriber('cmd', String, self.update_cmd)
+        self.subscriber_angles = rospy.Subscriber('angle_raw', Int64MultiArray, self.check_angles)
         rospy.init_node('angle_ctrl')
 
     def update_cmd(self, b):
         self.command=b.data
 
-    def run(self):
-        r=rospy.Rate(10)
-        while not rospy.is_shutdown():
-            angles = rospy.Subscriber('angle_raw', 'numpy.ndarray',queue_size =1)
-            a , b = legation(angles,angles_off,direction,angles_check)
-            self.pub2.publish(update_cmd(self,b))
-            if self.command !='STOP':
-                self.pub.publish(a)
-     
+    def check_angles(self, angles_msg):
+        a , b = legation(angles_msg.data,angles_off,direction,angles_check)
+        self.command = b
+        self.pub2.publish()
+        if self.command !='STOP':
+            self.pub.publish(a)
