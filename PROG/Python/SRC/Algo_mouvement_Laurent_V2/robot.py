@@ -5,6 +5,7 @@ from rospy.numpy_msg import numpy_msg
 from std_msgs.msg import Float64
 from std_msgs.msg import String
 import rospy
+import tools
 
 class Robot:
     def __init__(self, N_legs = 6, l1 = 0.5, l2 = 1., l3=1., l = 0.7, L = 3.7, minimum_legs_down = 4, taxiway_delay_cycles = 8, max_sameside_leg_number = 4, alpha_margin_sameside = np.pi/40, frm = 0.1, srud =30., udhr = 0.1, flight_angle = pi/4, artefact=False, artefact_position = None, artefact_orientation = None):
@@ -19,7 +20,7 @@ class Robot:
             self.speed = 0.
             self.h = 1.
 
-            self.motor_publishers = [rospy.Publisher("angles_raw{0}".format(i), numpy_msg(Floats),queue_size=1) for i in range(self.N_legs)]
+            self.motor_publishers = [rospy.Publisher("angles_raw_leg_{0}".format(i), numpy_msg(Floats),queue_size=1) for i in range(self.N_legs)]
             self.command_publisher = rospy.Publisher("command", String, queue_size=1)
             rospy.Subscriber("command", String, self.UpdateCommand)
             rospy.Subscriber("speed", Float64, self.UpdateSpeed)
@@ -148,15 +149,15 @@ class Robot:
         self.command = commandMessage.data
         print "Set command to {0}".format(self.command)
         if self.command == 'RESET':
-            self.ResetLegsPosition()
+            self.ResetLegsPositions()
+        elif self.command == 'SETH':
+            self.ResetLegsPositions()
+            self.SetRobotHeigh()
 
     def UpdateHeight(self, heightMessage):
         self.h = heightMessage.data
-        for leg in self.Legs:
-            leg.set_height(self.h)
-            leg.update_angles_from_position()
         print "Set height to {0}".format(self.h)
-        self.SaveAndPublishCommand('RESET')
+        self.SaveAndPublishCommand('SETH')
 
     def UpdateSpeed(self, speedMessage):
         self.speed = speedMessage.data
@@ -286,11 +287,45 @@ class Robot:
 
     def ResetLegsPositions(self):
         '''Function to reset the legs to their original state'''
-        order = [0,4,2,3,1,5]
+        order_th = [0,4,2,3,1,5]
+
+        order = []
+        for leg in self.Legs:
+            if leg.status== 'up':
+                order += [leg.leg_id]
+        for leg_id in order_th:
+            if leg_id not in order:
+                order += [leg_id]
+
         tolerance = 1 #Error tolerance in cm to avoid moving a leg uselessly
         N_points_flights = 30
         
         for leg_id in order:
+            print "Reseting leg {0}".format(leg_id)
+            leg = self.Legs[leg_id]
+            cycle = 0
+            if leg.status == 'up' or np.linalg.norm(leg.relative_feet_position - np.array([leg.x_repos, leg.y_repos, -leg.h])) > tolerance:
+                
+                leg.flight = tools.flight(leg.relative_feet_position, np.array([leg.x_repos, leg.y_repos, -leg.h]), leg.h_up*1.05, N_points_flights)
+                leg.status = 'up'
+                leg.cycle_takeoff = 0
+                while leg.status != 'down':
+                    cycle += 1
+                    if (cycle - leg.cycle_takeoff) <= len(leg.flight)-1:
+                        leg.follow_flight(cycle)
+                        AnglesMessage = np.array(leg.angles, dtype = np.float32)
+                        self.motor_publishers[leg.leg_id].publish(AnglesMessage)
+                    else:
+                        leg.extend_flight()
+                    leg.check_landing(cycle)
+            print "Reset ended at cycle {0}".format(cycle)
+        self.SaveAndPublishCommand('STOP')
+
+    def SetRobotHeight(self):
+        #TODO
+        for leg in self.Legs:
+            leg.set_height(self.h)
+            leg.update_angles_from_position()
 
     def GoTo(self, final_position, rotation_factor = 0.1):
         '''

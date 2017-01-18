@@ -76,6 +76,7 @@ class Leg:
         self.y_repos = y_repos
 
         self.set_height(h_repos)
+        self.relative_feet_position = np.array([self.x_repos, self.y_repos, -self.h])
         self.update_angles_from_position()
         self.absolute_feet_position = None
         self.h_up = self.h*up_down_ratio
@@ -96,7 +97,6 @@ class Leg:
     def set_height(self, height):
         '''ONLY USE WHEN ALL LETS ARE BEING RESET AND DOWN '''
         self.h = height
-        self.relative_feet_position = np.array([self.x_repos, self.y_repos, -self.h])
 
     def get_position_from_angles(self, angles):
         alpha = angles[0]
