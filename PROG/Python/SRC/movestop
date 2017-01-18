@@ -103,3 +103,7 @@ class Robot_control:
 				self.publisher_leg4.publish(angles)
 			elif num_leg == 5:
 				self.publisher_leg5.publish(angles)
+				
+
+
+
