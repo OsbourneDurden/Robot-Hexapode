@@ -34,7 +34,7 @@ import matplotlib.pylab as pyl
 
 
 class Leg:
-    def __init__(self, leg_id, neighbours, fix_position, fix_angle, side, alpha_data, beta_data, gamma_data, x_repos, y_repos, h_repos, l1, l2, l3, landing, envy, need, speed_ratio, up_down_ratio, flight_angle, frm, color):
+    def __init__(self, leg_id, neighbours, fix_position, fix_angle, side, alpha_data, beta_data, gamma_data, x_repos, y_repos, h_repos, l1, l2, l3, landing, envy, need, speed_ratio, up_down_ratio, frm, color):
         self.alphamin = alpha_data[0]
         self.alphamax = alpha_data[1]
 
@@ -80,7 +80,6 @@ class Leg:
         self.update_angles_from_position()
         self.absolute_feet_position = None
         self.h_up = self.h*up_down_ratio
-        self.flight_angle = flight_angle # Currently unused
         self.frm = frm
 
         self.R_repos = np.sqrt(x_repos**2+y_repos**2)

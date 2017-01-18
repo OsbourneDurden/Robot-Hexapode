@@ -1,6 +1,9 @@
 import math
 import numpy as np
 
+def rotate(vector, new_orientation_vector):
+    return np.array([vector[0]*new_orientation_vector[0] - vector[1]*new_orientation_vector[1], +vector[1]*new_orientation_vector[0] + vector[0]*new_orientation_vector[1]])
+
 def intersect(A, B):
     if A[0] == 'C' and (B[0] == 'S' or B[0] == 'L'):
         objectA = A
@@ -140,3 +143,20 @@ def flight(I, F, h_up, n_points):
 
     print "FInal flight generated : {0}".format(points)
     return points
+
+def file_loader(filename):
+
+    data_dictionnary = {}
+    f = open(filename, 'r')
+    for line_raw in f:
+        line = line_raw[:-1]
+        if line.count('&') == 1:
+            data_dictionnary[line.split('&')[0]] = line.split('&')[1]
+        elif line.count('&') > 1:
+            data_dictionnary[line.split('&')[0]] = [value for value in line.split('&')[1:]]
+        else:
+            #Empty line
+            None
+    f.close()
+
+    return data_dictionnary
