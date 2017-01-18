@@ -9,7 +9,7 @@ import tools
 import time
 
 class Robot:
-    def __init__(self, N_legs = 6, l1 = 0.5, l2 = 1., l3=1., l = 0.7, L = 3.7, minimum_legs_down = 4, taxiway_delay_cycles = 8, max_sameside_leg_number = 4, alpha_margin_sameside = np.pi/40, frm = 0.1, srud =30., udhr = 0.1, artefact=False, artefact_position = None, artefact_orientation = None):
+    def __init__(self, minimum_legs_down = 4, taxiway_delay_cycles = 8, max_sameside_leg_number = 4, alpha_margin_sameside = np.pi/40, frm = 0.1, srud =30., udhr = 0.1, artefact=False, artefact_position = None, artefact_orientation = None):
         if not artefact:
             geometry_data = tools.file_loader('geometry.txt')
 
@@ -46,9 +46,6 @@ class Robot:
             self.taxiway_delay_cycles = taxiway_delay_cycles
             self.last_takeoff = -taxiway_delay_cycles
             
-            self.l = l # Width of the body
-            self.L = L # Length of the body
-            self.frm = frm # Rotation/Movement factor. At 0, the  robot rotates on himself then goes forward. At 1, the robot permenently rotates as it translates to the final point
             
             # Variables defining the history of the robot.
             self.history = []
@@ -78,6 +75,7 @@ class Robot:
             x_repos = float(geometry_data['X_REPOS'])
             y_repos = float(geometry_data['Y_REPOS'])
             
+            self.frm = frm # Rotation/Movement factor. At 0, the  robot rotates on himself then goes forward. At 1, the robot permenently rotates as it translates to the final point
             self.srud = srud # Speed ratio up/down (SRUD) defines how fast a leg travels forward when lifted compared to grounded legs. For this model to work, we need rud > N_legs/(N_legs - minimum_legs_down). False. TODO
             # It will be mostly constrained by physical capacities of actuators
             self.udhr = udhr # Up/Down Height Ratio. Height to which each leg has to be lifted when not grounded compared to the height of the robot. 
@@ -110,9 +108,9 @@ class Robot:
                     x_repos,
                     y_repos,
                     self.h,
-                    l1,
-                    l2,
-                    l3,
+                    float(geometry_data['L1']),
+                    float(geometry_data['L2']),
+                    float(geometry_data['L3']),
                     landing,
                     envy,
                     need,
@@ -318,6 +316,8 @@ class Robot:
         time_one_leg = 1.
 
         for leg_id in order:
+            if self.command != 'MOVE':
+                break
             print "Reseting leg {0}".format(leg_id)
             leg = self.Legs[leg_id]
             cycle = 0
@@ -328,6 +328,8 @@ class Robot:
                 leg.status = 'up'
                 leg.cycle_takeoff = 0
                 while leg.status != 'down':
+                    if self.command != 'RESET':
+                        break
                     cycle += 1
                     if (cycle - leg.cycle_takeoff) <= len(leg.flight)-1:
                         leg.follow_flight(cycle)
@@ -348,6 +350,8 @@ class Robot:
             heights = np.linspace(self.h, self.NewHeight, N_points_move)
             last_publish = time.time()
             for current_height in heights:
+                if self.command != 'SETH':
+                    break
                 for leg in self.Legs:
                     leg.set_height(current_h)
                     leg.update_angles_from_position()
