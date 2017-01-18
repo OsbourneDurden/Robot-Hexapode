@@ -1,4 +1,5 @@
 import numpy as np
+import sys
 import math
 import tools
 import matplotlib.pylab as pyl
@@ -33,20 +34,15 @@ import matplotlib.pylab as pyl
 
 
 class Leg:
-    def __init__(self, leg_id, neighbours, fix_position, fix_angle, side, alpha_data, beta_data, gamma_data, l1, l2, l3, landing, envy, need, speed_ratio, up_down_ratio, flight_angle, frm, color):
+    def __init__(self, leg_id, neighbours, fix_position, fix_angle, side, alpha_data, beta_data, gamma_data, x_repos, y_repos, h_repos, l1, l2, l3, landing, envy, need, speed_ratio, up_down_ratio, flight_angle, frm, color):
         self.alphamin = alpha_data[0]
         self.alphamax = alpha_data[1]
-        self.alpharepos = alpha_data[2]
 
         self.betamin = beta_data[0]
         self.betamax = beta_data[1]
-        self.betarepos = beta_data[2]
 
         self.gammamin = gamma_data[0]
         self.gammamax = gamma_data[1]
-        self.gammarepos = gamma_data[2]
-
-        self.angles = [self.alpharepos, self.betarepos, self.gammarepos]
 
         self.side = side
         self.fix_position = fix_position
@@ -76,14 +72,17 @@ class Leg:
 
         self.speed_ratio_up_down = speed_ratio
         
-        self.h = 0 # Actually set next line
-        self.relative_feet_position = self.get_position_from_angles(self.angles, init=True)
+        self.x_repos = x_repos
+        self.y_repos = y_repos
+
+        self.set_height(h_repos)
+        self.update_angles_from_position()
         self.absolute_feet_position = None
         self.h_up = self.h*up_down_ratio
         self.flight_angle = flight_angle # Currently unused
         self.frm = frm
 
-        self.R_repos = self.get_extension(self.angles)
+        self.R_repos = np.sqrt(x_repos**2+y_repos**2)
         sBetaRmin = (self.h - np.sin(self.gammamin)*self.l3)/self.l2
         self.Rmin = self.l1 + self.l2*np.sqrt(1-sBetaRmin**2) + self.l3*np.cos(self.gammamax)
         self.Rmax = self.l1 + np.sqrt((self.l2+self.l3)**2-self.h**2)
@@ -94,7 +93,12 @@ class Leg:
         self.demand = None
         self.contact = True
 
-    def get_position_from_angles(self, angles, init=False):
+    def set_height(self, height):
+        '''ONLY USE WHEN ALL LETS ARE BEING RESET AND DOWN '''
+        self.h = height
+        self.relative_feet_position = np.array([self.x_repos, self.y_repos, -self.h])
+
+    def get_position_from_angles(self, angles):
         alpha = angles[0]
         beta  = angles[1]
         gamma = angles[2]
@@ -103,8 +107,6 @@ class Leg:
         y = self.l1*np.sin(alpha) + self.l2*np.sin(alpha)*np.cos(beta) + self.l3*np.sin(alpha)*np.cos(gamma)
         z = 0                     - self.l2*np.sin(beta)               - self.l3*np.sin(gamma)
 
-        if init:
-            self.h = -z
         return np.array([x,y,z])
 
     def get_extension(self, angles):
@@ -120,21 +122,17 @@ class Leg:
         R = np.sqrt(x**2+y**2)
         alpha = np.arctan(y/x)
                 
-        if 1:
-            print R, z, 
-            theta = np.arccos(((R-self.l1)**2 + z**2 + self.l2**2 - self.l3**2)
-                    /(2 * self.l2 * np.sqrt((R-self.l1)**2 + z**2)))
-            theta2 = -np.arctan((R-self.l1)/z) #possible "-"z missing
-
-            beta = np.pi/2-(theta+theta2)
-            if R > self.l1 + np.cos(beta)*self.l2:
-                gamma = np.arcsin((np.abs(z)-self.l2*np.sin(np.pi/2-(theta+theta2)))/self.l3)
-            else:
-                gamma = np.pi - np.arcsin((np.abs(z)-self.l2*np.sin(np.pi/2-(theta+theta2)))/self.l3)
-
-            return [alpha, beta, gamma]
+        theta = np.arccos(((R-self.l1)**2 + z**2 + self.l2**2 - self.l3**2)
+                /(2 * self.l2 * np.sqrt((R-self.l1)**2 + z**2)))
+        theta2 = -np.arctan((R-self.l1)/z) #possible "-"z missing
+        
+        beta = np.pi/2-(theta+theta2)
+        if R > self.l1 + np.cos(beta)*self.l2:
+            gamma = np.arcsin((np.abs(z)-self.l2*np.sin(np.pi/2-(theta+theta2)))/self.l3)
         else:
-            return None
+            gamma = np.pi - np.arcsin((np.abs(z)-self.l2*np.sin(np.pi/2-(theta+theta2)))/self.l3)
+            
+        return [alpha, beta, gamma]
 
     def update_angles_from_position(self):
         # Computes the 3 angles alpha, beta, gamma from the position of the leg in its own referential
@@ -142,11 +140,8 @@ class Leg:
         if angles != None:
             print "Changing angles for leg {4} : {0},{1} and {2} from position {3}".format(angles[0], angles[1], angles[2], self.relative_feet_position, self.leg_id)
             self.angles = angles
-            return None
         else:
             print "Unable to find angles for leg {0} at position {1}".format(self.leg_id, self.relative_feet_position)
-            sys.exit("lol")
-            return None
 
     def get_leg_absolute_position(self, robot):
         return robot.position + robot.rotate_vector_to_absolute_from_robot(self.fix_position + self.rotate_vector_to_robot_from_leg(self.relative_feet_position))
@@ -258,7 +253,6 @@ class Leg:
             dmin2 = R*min(np.linalg.norm(self.angles[0]-a1), np.linalg.norm(self.angles[0]-a2))
         else:
             print "Zone_in {0} is actually outer for leg {1} and relative_feet_position {2} ! Weird".format(zone_in, self.leg_id, self.relative_feet_position)
-            sys.exit('Error 2547813')
         return dmin2/(dmin1 + dmin2)
 
     def extend_flight(self):

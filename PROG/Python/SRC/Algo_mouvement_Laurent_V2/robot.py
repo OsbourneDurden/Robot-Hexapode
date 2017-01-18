@@ -1,14 +1,34 @@
 from leg import *
+from rospy_tutorials.msg import Floats
 import numpy as np
+from rospy.numpy_msg import numpy_msg
+from std_msgs.msg import Float64
+from std_msgs.msg import String
+import rospy
 
 class Robot:
-    def __init__(self, N_legs = 6, l1 = 0.5, l2 = 1., l3=1., l = 0.7, L = 3.7, minimum_legs_down = 4, taxiway_delay_cycles = 5, max_sameside_leg_number = 4, alpha_margin_sameside = np.pi/40, frm = 0.1, srud =30., udhr = 0.1, flight_angle = pi/4, artefact=False, artefact_position = None, artefact_orientation = None):
+    def __init__(self, N_legs = 6, l1 = 0.5, l2 = 1., l3=1., l = 0.7, L = 3.7, minimum_legs_down = 4, taxiway_delay_cycles = 8, max_sameside_leg_number = 4, alpha_margin_sameside = np.pi/40, frm = 0.1, srud =30., udhr = 0.1, flight_angle = pi/4, artefact=False, artefact_position = None, artefact_orientation = None):
         if not artefact:
+
             # All length units here are in arbitrary units. 
             self.N_legs = N_legs # Number of leg in this model
             self.artefact = False
 
+#Initialization of ROSPY
+            self.command = 'IDLE'
+            self.speed = 0.
+            self.h = 1.
 
+            self.motor_publishers = [rospy.Publisher("angles_raw{0}".format(i), numpy_msg(Floats),queue_size=1) for i in range(self.N_legs)]
+            self.command_publisher = rospy.Publisher("command", String, queue_size=1)
+            rospy.Subscriber("command", String, self.UpdateCommand)
+            rospy.Subscriber("speed", Float64, self.UpdateSpeed)
+            rospy.Subscriber("height", Float64, self.UpdateHeight)
+            rospy.init_node('moving_algo', anonymous=True)
+            self.r = rospy.Rate(1)
+
+            self.N_points_by_cm = 30
+        
             # RULES DEFINITIONS
             self.minimum_legs_down = minimum_legs_down # Minimum number of leg on the ground at all cycles to ensure bearing
             self.max_sameside_leg_number = max_sameside_leg_number # Max number of leg that can be on the same side
@@ -29,24 +49,24 @@ class Robot:
             
             # Values to define the leg demands zones (see leg.py). Keep the order need < envy (< landing, to be removed).
             # The larger these values, the more safe you are about geetting close to mechanical stops, but the more power consuming this model gets. 
-            need = 0.05
-            envy = 0.1
-            landing = 0.15
+            need = 0.10
+            envy = 0.20
+            landing = 0.15 #Useless for now
             
             # Definition of allowed and default leg angles. Alpha is the horizontal rotation angle, Beta is the first vertical rotation  angle and gamma is the second one.
             # Xrepos is the default value chosen.
             alphamax = np.pi/4
             alphamin = -np.pi/4
-            alpharepos = 0.
             alphadiff = alphamax - alphamin
             
             betamin = -np.pi/4
             betamax = np.pi/4
-            betarepos = 0.
             
             gammamin = np.pi/4
             gammamax = 3*np.pi/4
-            gammarepos = np.pi/2
+
+            x_repos = 1.5
+            y_repos = 0
             
             self.srud = srud # Speed ratio up/down (SRUD) defines how fast a leg travels forward when lifted compared to grounded legs. For this model to work, we need rud > N_legs/(N_legs - minimum_legs_down). False. TODO
             # It will be mostly constrained by physical capacities of actuators
@@ -74,9 +94,12 @@ class Robot:
                     legs_fix[n_leg], 
                     legs_fix_angles[n_leg],
                     side, 
-                    [alphamin, alphamax, alpharepos], 
-                    [betamin, betamax, betarepos],
-                    [gammamin, gammamax, gammarepos],
+                    [alphamin, alphamax], 
+                    [betamin, betamax],
+                    [gammamin, gammamax],
+                    x_repos,
+                    y_repos,
+                    self.h,
                     l1,
                     l2,
                     l3,
@@ -88,10 +111,8 @@ class Robot:
                     flight_angle,
                     frm,
                     colors[n_leg])]
-                h_mean += self.Legs[-1].h
                 
-            self.position = np.array([0., 0., h_mean/self.N_legs]) # Initial position. At the initialisation, the robot is at the vertical of its landmark
-            self.h = h_mean/self.N_legs
+            self.position = np.array([0., 0., self.h]) # Initial position. At the initialisation, the robot is at the vertical of its landmark
             self.orientation = np.array([1., 0., 0.]) # Initial orientation. At the initialisation, the robot is along the x axis
 
             self.compute_refchanging_rob_to_abs_matrix()
@@ -110,6 +131,7 @@ class Robot:
                 leg.absolute_feet_position = leg.get_leg_absolute_position(self)
                 self.absolute_feet_positions_history[-1] += [leg.absolute_feet_position]
                 self.relative_feet_positions_history[-1] += [leg.relative_feet_position]
+
         else:
             # The artefact option allows to create a fake robot to use in the different routines, for example in leg.get_leg_absolute_position
             self.artefact = True
@@ -117,6 +139,32 @@ class Robot:
             self.orientation = artefact_orientation
             self.compute_refchanging_rob_to_abs_matrix()
 
+    def ConcatenateAnglesAndPublish(self):
+        for leg in self.Legs:
+            AnglesMessage = np.array(leg.angles, dtype = np.float32)
+            self.motor_publishers[leg.leg_id].publish(AnglesMessage)
+
+    def UpdateCommand(self, commandMessage):
+        self.command = commandMessage.data
+        print "Set command to {0}".format(self.command)
+        if self.command == 'RESET':
+            self.ResetLegsPosition()
+
+    def UpdateHeight(self, heightMessage):
+        self.h = heightMessage.data
+        for leg in self.Legs:
+            leg.set_height(self.h)
+            leg.update_angles_from_position()
+        print "Set height to {0}".format(self.h)
+        self.SaveAndPublishCommand('RESET')
+
+    def UpdateSpeed(self, speedMessage):
+        self.speed = speedMessage.data
+        print "Set speed to {0}".format(self.speed)
+
+    def SaveAndPublishCommand(self, command):
+        self.command = command
+        self.command_publisher.publish(command)
 
     def get_relative_point(self, final_absolute_feet_position, flightend_absolute_robot_position, flightend_absolute_robot_orientation, leg_to_raise):
         '''Get final_feet_position in the leg referential when the leg is supposed to land.
@@ -166,7 +214,7 @@ class Robot:
         for leg in self.Legs:
             if leg.status == 'up':
                 n_legs_up += 1
-        print "Print closing flight. Still {0} to land".format(n_legs_up)
+        print "Closing flight. Still {0} to land".format(n_legs_up)
         while n_legs_up > 0:
             cycle_end += 1
             # We set the different history variables for this cycle
@@ -198,42 +246,71 @@ class Robot:
                     if leg.status == 'down':
                         n_legs_up -= 1
 
-
         print "All legs landed at final cycle {0}.".format(cycle_end)
 
+    def compute_move_data(self, final_position, final_orientation, N_points):
+        if final_orientation == None:
+            final_position = np.array(final_position + [self.position[2]])
+            final_orientation = final_position-self.position
+            final_orientation /= norm(final_orientation)
 
-    def move_to(self, final_position, N_points = 500, rotation_factor = 0.1):
+            points_center = [0,0,0]
+            points_center[0] = np.linspace(self.position[0], final_position[0], N_points)
+            points_center[1] = np.linspace(self.position[1], final_position[1], N_points)
+            points_center[2] = np.linspace(self.h, self.h, N_points)
+            positions = np.array(points_center)
+            orientation_x = np.linspace(self.orientation[0], final_orientation[0], int(self.frm*N_points))
+            orientation_y = np.linspace(self.orientation[1], final_orientation[1], int(self.frm*N_points))
+            orientation_x /= np.sqrt(orientation_x**2+orientation_y**2)
+            orientation_y /= np.sqrt(orientation_x**2+orientation_y**2)
+            orientations = [0,0,0]
+            orientations[0] = np.array(orientation_x.tolist() + [final_orientation[0] for i in range(N_points - len(orientation_x))])
+            orientations[1] = np.array(orientation_y.tolist() + [final_orientation[1] for i in range(N_points - len(orientation_y))])
+            orientations[2] = np.linspace(0, 0, N_points)
+            orientations=np.array(orientations)
+
+            return positions, orientations
+        else:
+            final_position = np.copy(self.position)
+            orientation_x = np.linspace(self.orientation[0], final_orientation[0], N_points)
+            orientation_y = np.linspace(self.orientation[1], final_orientation[1], N_points)
+            orientation_x /= np.sqrt(orientation_x**2+orientation_y**2)
+            orientation_y /= np.sqrt(orientation_x**2+orientation_y**2)
+            orientations = [0,0,0]
+            orientations[0] = np.array(orientation_x.tolist())
+            orientations[1] = np.array(orientation_y.tolist())
+            orientations[2] = np.linspace(0, 0, N_points)
+            orientations=np.array(orientations)
+
+            return positions, orientations
+
+    def ResetLegsPositions(self):
+        '''Function to reset the legs to their original state'''
+        order = [0,4,2,3,1,5]
+        tolerance = 1 #Error tolerance in cm to avoid moving a leg uselessly
+        N_points_flights = 30
+        
+        for leg_id in order:
+
+    def GoTo(self, final_position, rotation_factor = 0.1):
         '''
         Function to move the robot.
         final_position : Desired position as vector [x,y] in the temporary landmark of the robot
         N_points : number of points for this move. Probably useless in the end, necessary for the current algorythm
         Returns an history of the center positions, feet positions, and angles of each leg.
         '''
-        final_position = np.array(final_position + [self.position[2]])
-        final_orientation = final_position-self.position
-        final_orientation /= norm(final_orientation)
-
-        points_center = [0,0,0]
-        points_center[0] = np.linspace(self.position[0], final_position[0], N_points)
-        points_center[1] = np.linspace(self.position[1], final_position[1], N_points)
-        points_center[2] = np.linspace(self.h, self.h, N_points)
-        positions = np.array(points_center)
-        orientation_x = np.linspace(self.orientation[0], final_orientation[0], int(self.frm*N_points))
-        orientation_y = np.linspace(self.orientation[1], final_orientation[1], int(self.frm*N_points))
-        orientation_x /= np.sqrt(orientation_x**2+orientation_y**2)
-        orientation_y /= np.sqrt(orientation_x**2+orientation_y**2)
-        orientations = [0,0,0]
-        orientations[0] = np.array(orientation_x.tolist() + [final_orientation[0] for i in range(N_points - len(orientation_x))])
-        orientations[1] = np.array(orientation_y.tolist() + [final_orientation[1] for i in range(N_points - len(orientation_y))])
-        orientations[2] = np.linspace(0, 0, N_points)
-        orientations=np.array(orientations)
+        N_points = int(np.linalg.norm(np.array(final_position)-np.array(self.position)[:-1])*self.N_points_by_cm)
+        
+        positions, orientations = self.compute_move_data(final_position, None, N_points)
 
         final_feet_positions =[]
-        final_robot = Robot(artefact=True, artefact_position = final_position, artefact_orientation = final_orientation)
+        final_robot = Robot(artefact=True, artefact_position = positions[:,-1], artefact_orientation = orientations[:,-1])
         for leg in self.Legs:
             final_feet_positions += [leg.get_leg_absolute_position(final_robot)]
 
         for cycle in range(1, N_points):
+            if self.command != 'MOVE':
+                break
         # We start at cycle 1 since 0 is the initial position.
             print ""
             print "Statuses at start of cycle {0} : {1}".format(cycle, [leg.status for leg in self.Legs])
@@ -260,6 +337,8 @@ class Robot:
                     legs_down += 1
                     leg.relative_feet_position = leg.get_leg_relative_position(self) # We first update the relative position of the grounded legs
                     leg.update_angles_from_position() # We update the new angles for this relative position
+                    if np.isnan(leg.angles).any():
+                        self.SaveAndPublishCommand('ERROR')
                     self.angles_history[-1] += [leg.angles] 
                     mean_alpha_move += np.abs(self.angles_history[-2][leg.leg_id][0]-self.angles_history[-1][leg.leg_id][0])
                     self.absolute_feet_positions_history[-1] += [leg.absolute_feet_position]
@@ -276,10 +355,10 @@ class Robot:
                         demands += [2]
                     elif leg_zones['critical'] == False:
                         print "Leg {0} passed critical boundary !".format(leg.leg_id)
-                        sys.exit('Error 2893254')
+                        self.SaveAndPublishCommand('ERROR')
                     else:
                         print "Unknown leg_zones status. Probable definition issue"
-                        sys.exit('Error 5249632')
+                        self.SaveAndPublishCommand('ERROR')
                 
                 elif leg.status == 'up': # If the leg is currently moving in the air, towards a designed position.
                     if (cycle - leg.cycle_takeoff) <= len(leg.flight)-1:
@@ -307,7 +386,7 @@ class Robot:
 #                    demands += [0]
                 else:
                     print "Unknown status for leg {0} : {1}".format(leg.leg_id, leg.status)
-                    sys.exit("Error 2548731")
+                    self.SaveAndPublishCommand('ERROR')
 
             # Now, all legs positions have been updated. We now check the demands of each leg, and update the statuses
             mean_alpha_move /= legs_down
@@ -338,7 +417,7 @@ class Robot:
                 elif  (np.array(R.angles_history[0])[:,0] > 0).sum() > self.max_sameside_leg_number:
                     # and they are too many legs on the same positive side, meaning we moved forward too many of them !
                     print "Algorithmic error, too many legs moved forward, can't keep up with the rules !"
-                    sys.exit("Error 5874216")
+                    self.SaveAndPublishCommand('ERROR')
             print "Finals demands for cycle {1} are {0}".format(demands, cycle)
                         
             if sum(demands)>0:
@@ -382,7 +461,7 @@ class Robot:
             if leg_to_raise == None:
                 print "No leg to be raised at the end of cycle {0}".format(cycle)
             else:
-                if not self.Legs[leg_to_raise].has_neighbour_up(self) and legs_down > self.minimum_legs_down and (2 in demands or cycle-self.last_takeoff > self.taxiway_delay_cycles):
+                if not self.Legs[leg_to_raise].has_neighbour_up(self) and legs_down > self.minimum_legs_down and (2 in demands or cycle-self.last_takeoff >= self.taxiway_delay_cycles):
                     print "Leg {0} is going to be raised at the end of cycle {1}".format(leg_to_raise, cycle)
                     N_points_flight = self.get_flight_length(leg_to_raise, mean_alpha_move)
                     if cycle+N_points_flight > N_points-1:
@@ -398,6 +477,9 @@ class Robot:
                         print "Neighbour currently in the air"
                     if legs_down <= self.minimum_legs_down:
                         print "Too many legs in the air"
-                    if cycle-self.last_takeoff > self.taxiway_delay_cycles:
+                    if cycle-self.last_takeoff < self.taxiway_delay_cycles:
                         print "Must wait {0} cycles before possible takeoff".format(-(cycle-self.last_takeoff) + self.taxiway_delay_cycles)
-        self.close_flights(cycle)
+            self.ConcatenateAnglesAndPublish()
+        if self.command != 'ERROR':
+            self.close_flights(cycle)
+        self.SaveAndPublishCommand('STOP')

@@ -1,11 +1,6 @@
 import math
 import numpy as np
 
-def rotate(vector, new_orientation_vector):
-# Return a rotated vector from a previous one, and a new origin, initially defined by [1, 0]
-# rotate(v, [1, 0]) returns v
-    return np.array([vector[0]*new_orientation_vector[0] - vector[1]*new_orientation_vector[1], +vector[1]*new_orientation_vector[0] + vector[0]*new_orientation_vector[1]])
-
 def intersect(A, B):
     if A[0] == 'C' and (B[0] == 'S' or B[0] == 'L'):
         objectA = A
