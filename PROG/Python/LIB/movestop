@@ -6,22 +6,23 @@ from std_msgs.msg import Float64MultiArray
 import numpy as np
 import re
         
-def parsse('data.txt')
+def parsse('data.txt'):
     with open('data.txt') as inf:
-	aa= np.zeros([6,3,2],float)
-	bb= np.zeros([6,3,2],float)
-	cc= np.zeros([6,3,2],float)
+	angles_off= np.zeros([6,3],float)
+	direction= np.zeros([6,3],float)
+	angles_check= np.zeros([6,3,2],float)
 	for line in inf:
-		line = line.split('=')
+		line = line.split('&')
 		line[0] = line[0].strip()
 		if line[0] == 'angles_off':
-			aa = re.sub(r'[]\[\']','',line[1].strip()).split(',')
+              angles_off= [[float(line[1]),float(line[2]),float(line[3])],[float(line[4]),float(line[5]),float(line[6])],[float(line[7]),float(line[8]),float(line[9])],[float(line[10]),float(line[11]),float(line[12])],[float(line[13]),float(line[14]),float(line[15])],[float(line[16]),float(line[17]),float(line[18])]]
 		elif line[0] == 'direction':
-			bb = float(line[1])
-		elif line[0] == 'angles_check':
-			cc = re.sub(r'[]\[\']','',line[1].strip()).split(',')
-
-        return aa , bb , cc
+              direction= [[float(line[1]),float(line[2]),float(line[3])],[float(line[4]),float(line[5]),float(line[6])],[float(line[7]),float(line[8]),float(line[9])],[float(line[10]),float(line[11]),float(line[12])],[float(line[13]),float(line[14]),float(line[15])],[float(line[16]),float(line[17]),float(line[18])]]
+		elif line[0] == 'angles_checkmin':
+              angles_check[0]= [[float(line[1]),float(line[2]),float(line[3])],[float(line[4]),float(line[5]),float(line[6])],[float(line[7]),float(line[8]),float(line[9])],[float(line[10]),float(line[11]),float(line[12])],[float(line[13]),float(line[14]),float(line[15])],[float(line[16]),float(line[17]),float(line[18])]]
+		elif line[0] == 'angles_checkmax':              
+              angles_check[1]= [[float(line[1]),float(line[2]),float(line[3])],[float(line[4]),float(line[5]),float(line[6])],[float(line[7]),float(line[8]),float(line[9])],[float(line[10]),float(line[11]),float(line[12])],[float(line[13]),float(line[14]),float(line[15])],[float(line[16]),float(line[17]),float(line[18])]]
+        return angles_off , direction , angles_check
 
     
 def legation(angles,angles_off,direction,angles_check):
