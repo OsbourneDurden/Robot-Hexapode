@@ -1,10 +1,26 @@
 import numpy as np
 from scipy import ndimage
 import cv2
+from rospy.numpy_msg import numpy_msg
+from rospy_tutorials.msg import Floats
+import rospy
 
 class Analyser:
     def __init__(self, calibrated = False):
+
+        self.RobotPosition = np.array([0., 0., 0.])
+        self.RobotOrientation = np.array([1., 0., 0.])
+        self.UpdateRotationMatrix()
+
+        self.3DPoints_publisher = rospy.Publisher("3D_zones".format(i), numpy_msg(Floats),queue_size=1) for i in range(self.N_legs)]
+        rospy.Subscriber('position', numpy_msg(Floats), self.UpdateRobotPosition)
+        rospy.Subscriber('orientation', numpy_msg(Floats), self.UpdateRobotOrientation)
+
+        self.zones_sidelenght = 5. # In cm
+
         self.PointsList = []
+        self.VoxelsDictionnary = {}
+
         if calibrated:
             calibration_file = open("calibration.txt", 'r')
             self.LeftCameraPosition = [0,0,0]
@@ -25,6 +41,10 @@ class Analyser:
                     self.LeftCameraPosition = np.array([float(value) for value in line.split('&')[1:]])
                 elif "CRP" in line.split('&'): # Stands for Camera Right Position
                     self.RightCameraPosition = np.array([float(value) for value in line.split('&')[1:]])
+                elif "CCP" in line.split('&'): # Stands for Cameras Center Position
+                    self.CenterCamerasPosition = np.array([float(value) for value in line.split('&')[1:]])
+                elif "CCPR" in line.split('&'): # Stands for Cameras Center Position in Robot
+                    self.CenterCamerasPositionInRobot = np.array([float(value) for value in line.split('&')[1:]])
                 elif "WMS" in line.split('&'):
                     self.WindowMatchSize = int(line.split('&')[1])
                     self.HWMS = int((self.WindowMatchSize-1)/2.)
@@ -47,6 +67,24 @@ class Analyser:
                 print "Wrond WindowMatchSize (undefined or even number)."
         else:
             print "No correct calibration file found"
+
+        rospy.init_node('analyser')
+        print "Initialization done. Running..."
+        rospy.spin()
+
+    def UpdateRobotPosition(self, data):
+        self.RobotPosition = angles_msg.data
+
+    def UpdateRobotPosition(self, data):
+        self.RobotOrientation = angles_msg.data
+        self.UpdateRotationMatrix()
+
+    def UpdateRotationMatrix(self):
+        A = np.sqrt(self.RobotOrientation[0]**2+self.RobotOrientation[1]**2)
+        Ox = self.RobotOrientation[0]
+        Oy = self.RobotOrientation[1]
+        Oz = self.RobotOrientation[2]
+        self.refchanging_rob_to_abs_matrix = np.array([[Ox, -Oy/A, -Oz*Ox/A], [Oy, Ox/A, Oz*Oy/A], [Oz, 0, A]])
 
     def save_parameters(self, output):
         
@@ -284,7 +322,14 @@ class Analyser:
         tmpPoint = np.dot(self.HomographyVerticalCameraRight, point_right)
         lineRightPointVertical = np.array([tmpPoint[0]/tmpPoint[2], tmpPoint[1]/tmpPoint[2], 0])
 
-        return self.findClosestPoint([lineLeftPointHorizontal, lineLeftPointVertical], [lineRightPointHorizontal, lineRightPointVertical])
+        3DPoint_in_landmark = self.findClosestPoint([lineLeftPointHorizontal, lineLeftPointVertical], [lineRightPointHorizontal, lineRightPointVertical])
+        return self.RobotToAbsolute(self.LandmarkToRobot(3DPoint_in_landmark))
+
+    def LandmarkToRobot(self, point):
+        return point - (self.CenterCamerasPosition - self.CenterCamerasPositionRobot) 
+
+    def RobotToAbsolute(self, point):
+        return np.dot(self.refchanging_rob_to_abs_matrix,V) + self.RobotPosition
 
     def findClosestPoint(self, lineLeft, lineRight):
         PLeft = lineLeft[0]
@@ -303,6 +348,13 @@ class Analyser:
         t = (b*e-c*d)/(a*c-b**2)
         return PLeft + t*vLeft
 
+    def AddToVoxel(self, point):
+        Coordinates_string = str([int(coordinate/self.zones_sidelenght) for coordinate in point])
+        if Coordinates_string not in self.VoxelDictionnary.keys():
+            self.VoxelDictionnary[Coordinates_string] = 1
+        else:
+            self.VoxelDictionnary[Coordinates_string] += 1
+
     def ComputeImages(self, origin = 'left'):
         
         points_to_compute = self.pointsOfInterest(origin)
@@ -310,7 +362,8 @@ class Analyser:
         for original_point in points_to_compute:
             matched_point = self.match_point(original_point, origin)
             if origin == 'left':
-                self.PointsList += self.compute3DCoordinates(point_left = original_point, point_right = matched_point)
+                self.PointsList += [self.compute3DCoordinates(point_left = original_point, point_right = matched_point)]
+                self.AddToVoxel(self.PointsList[-1])
             else:
                 self.PointsList += self.compute3DCoordinates(point_left = original_point, point_right = matched_point)
 

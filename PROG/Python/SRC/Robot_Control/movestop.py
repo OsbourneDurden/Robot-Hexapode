@@ -1,10 +1,13 @@
 #!/usr/bin/env python
 
+#import roslib; roslib.load_manifest("dynamixel_hr_ros")
 import rospy
 from std_msgs.msg import String
 from std_msgs.msg import Float64MultiArray
 from rospy.numpy_msg import numpy_msg
 from rospy_tutorials.msg import Floats
+sys.path.insert(1,'/home/pi/catkin_ws/src/dynamixel_hr_ros/')
+from dxl import *
 import numpy as np
 import re
         
@@ -21,10 +24,12 @@ def parsser(output):
                 direction = np.array([float(value) for value in line.split('&')[1:]]).reshape((6,3))
             elif "AC" in line.split('&'):
                 ang_check = np.array([float(value) for value in line.split('&')[1:]]).reshape((6,6))
+            elif "IDS" in line.split('&'):
+                ids = np.array([float(value) for value in line.split('&')[1:]]).reshape((6,3)).tolist()
             else:
                 print "Unknown entry: {0}".format(line)
 	data_file.close()
-	return ang_off , direction , ang_check
+	return ang_off , direction , ang_check, ids
 
 
 class Robot_control:
@@ -32,27 +37,17 @@ class Robot_control:
     def __init__(self):
 
         self.command = 'MOVE'
+        
 	
-        ang_off , direction , ang_check = parsser('angles.txt')
-        self.angles_off = ang_off
-        self.direction = direction
-        self.angles_check = ang_check
+        self.angles_off , self.direction , self.angles_check, self.legs_motors_ids = parsser('angles.txt')
         
         self.publisher_command = rospy.Publisher('command', String ,queue_size =1)
-        self.publisher_leg0 = rospy.Publisher('angles_corr_leg_0', Float64MultiArray,queue_size =1)
-        self.publisher_leg1 = rospy.Publisher('angles_corr_leg_1', Float64MultiArray,queue_size =1)
-        self.publisher_leg2 = rospy.Publisher('angles_corr_leg_2', Float64MultiArray,queue_size =1)
-        self.publisher_leg3 = rospy.Publisher('angles_corr_leg_3', Float64MultiArray,queue_size =1)
-        self.publisher_leg4 = rospy.Publisher('angles_corr_leg_4', Float64MultiArray,queue_size =1)
-        self.publisher_leg5 = rospy.Publisher('angles_corr_leg_5', Float64MultiArray,queue_size =1)
+        self.publisher_legs = rospy.Publisher("/dxl/command_position", CommandPosition)
+        self.enabler=rospy.Publisher("/dxl/enable",Bool)
+        self.enabler.publish(True)
         
         self.subscriber_command = rospy.Subscriber('command', String, self.update_cmd)
-        self.subscriber_leg0 = rospy.Subscriber('angles_raw_leg_0', numpy_msg(Floats), self.check_angles, 0)
-        self.subscriber_leg1 = rospy.Subscriber('angles_raw_leg_1', numpy_msg(Floats), self.check_angles, 1)
-        self.subscriber_leg2 = rospy.Subscriber('angles_raw_leg_2', numpy_msg(Floats), self.check_angles, 2)
-        self.subscriber_leg3 = rospy.Subscriber('angles_raw_leg_3', numpy_msg(Floats), self.check_angles, 3)
-        self.subscriber_leg4 = rospy.Subscriber('angles_raw_leg_4', numpy_msg(Floats), self.check_angles, 4)
-        self.subscriber_leg5 = rospy.Subscriber('angles_raw_leg_5', numpy_msg(Floats), self.check_angles, 5)
+        [rospy.Subscriber("angles_raw_leg_{0}".format(i), numpy_msg(Floats), self.check_angles, i) for i in range(6)]
 		
         rospy.init_node('angle_ctrl')
 
@@ -80,8 +75,8 @@ class Robot_control:
         angles_check = np.copy(angles_check)
         if  ( (angles_check[:3]>angles).any() ) or ( (angles_check[3:]<angles).any() ):
             '''stop'''
-            self.command = 'STOP'
-            self.publisher_command.publish('STOP')
+            self.command = 'ERROR'
+            self.publisher_command.publish('ERROR')
             ''' de base vaut 0'''        
         return angles
 		
@@ -98,20 +93,9 @@ class Robot_control:
         
         angles = self.legation(angles_msg.data, ang_off, direction, ang_check)
 		
-        if self.command != 'STOP' or True:
-            if numleg == 0:
-                self.publisher_leg0.publish(angles)
-            elif numleg == 1:
-                self.publisher_leg1.publish(angles)
-            elif numleg == 2:
-                self.publisher_leg2.publish(angles)
-            elif numleg == 3:
-                self.publisher_leg3.publish(angles)
-            elif numleg == 4:
-                self.publisher_leg4.publish(angles)
-            elif numleg == 5:
-                self.publisher_leg5.publish(angles)
-
-
-
-
+        if self.command != 'ERROR' or self.command != 'STOP':
+            command=CommandPosition()
+            command.id=self.legs_motors_ids[numleg]
+            command.angle=angles
+            command.speed=[1]*3
+            commander.publish(command)
