@@ -166,16 +166,16 @@ class Robot:
             self.ResetLegsPositions()
         elif self.command == 'SETH':
             self.ResetLegsPositions()
-            self.SetRobotHeigh()
+            self.SetRobotHeight()
 
     def UpdateHeight(self, heightMessage):
         self.NewHeight = heightMessage.data
         print "Set New height to {0}. Sending activation command.".format(self.h)
-        self.SaveAndPublishCommand('SETH')
+        #self.SaveAndPublishCommand('SETH')
 
     def UpdateSpeed(self, speedRatioMessage):
         self.speedRatio = speedRatioMessage.data
-        self.computeDeltaT()
+        self.computeDeltasT()
         print "Set speed ratio to {0}".format(self.speedRatio)
 
     def SaveAndPublishCommand(self, command):
@@ -345,9 +345,9 @@ class Robot:
         self.SaveAndPublishCommand('STOP')
 
     def SetRobotHeight(self):
-        print "Setting height from {0} to {1}".format(self.h, self.OldHeight)
+        print "Setting height from {0} to {1}".format(self.h, self.NewHeight)
         if self.NewHeight != self.h:
-            heights = np.linspace(self.h, self.NewHeight, N_points_move)
+            heights = np.linspace(self.h, self.NewHeight, self.NPointsSetHeight)
             last_publish = time.time()
             for current_height in heights:
                 if self.command != 'SETH':
