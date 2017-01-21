@@ -19,7 +19,9 @@ class Robot:
 
 
 #Initialization of ROSPY
-            self.command = 'STOP'
+            self.command = 'STOP' # Possibilities : 'STOP', 'ERROR', 'MOVE', 'SETH', 'RESET'
+            self.status = 'STOPPED' # Possibilities : 'STOPPED', 'ERROR', 'MOVING', 'RESETING', 'SETHING', 'CLOSING'
+            self.NextAction = None # Possibilities : 'MOVE', 'SETH' , 'RESET'
             self.speedRatio = 0.
             self.h = float(geometry_data['H'])
             self.NewHeight = self.h
@@ -28,9 +30,11 @@ class Robot:
             self.position_publisher = rospy.Publisher("position", numpy_msg(Floats),queue_size=1)
             self.orientation_publisher = rospy.Publisher("orientation", numpy_msg(Floats),queue_size=1)
             self.command_publisher = rospy.Publisher("command", String, queue_size=1)
+            self.status_publisher = rospy.Publisher("status", String, queue_size=1)
             rospy.Subscriber("command", String, self.UpdateCommand)
             rospy.Subscriber("speed", Float64, self.UpdateSpeed)
             rospy.Subscriber("height", Float64, self.UpdateHeight)
+            rospy.Subscriber("direction", numpy_msg(Floats), self.UpdateDirection)
             rospy.init_node('moving_algo', anonymous=True)
             self.r = rospy.Rate(1)
 
@@ -143,6 +147,8 @@ class Robot:
                 self.absolute_feet_positions_history[-1] += [leg.absolute_feet_position]
                 self.relative_feet_positions_history[-1] += [leg.relative_feet_position]
 
+            self.SaveAndPublishStatus('STOPPED')
+
         else:
             # The artefact option allows to create a fake robot to use in the different routines, for example in leg.get_leg_absolute_position
             self.artefact = True
@@ -170,11 +176,132 @@ class Robot:
     def UpdateCommand(self, commandMessage):
         self.command = commandMessage.data
         print "Set command to {0}".format(self.command)
-        if self.command == 'RESET':
-            self.ResetLegsPositions()
+
+        current_status = self.status
+        if self.command == 'ERROR':
+            print "'ERROR' command received, changed status"
+            self.SaveAndPublishStatus('ERROR')
+
+        elif self.command == 'STOP':
+            if current_status == 'MOVING':
+                self.SaveAndPublishStatus('CLOSING')
+                self.NextAction = None
+
+            elif current_status == 'SETHING':
+                print "Unable to stop SETH move for now. TODO"
+                self.NextAction = None
+
+            elif current_status == 'RESET':
+                print "Unable to stop RESET move for now. TODO"
+                self.NextAction = None
+
+            elif current_status == 'ERROR':
+                print "Current status is 'ERROR'. Try reset first. Ignoring order"
+                self.NextAction = None
+                self.SaveAndPublishCommand('ERROR')
+
+            elif current_status == 'CLOSING':
+                print "Can't stop a CLOSING status midterm. Ignoring order"
+                self.NextAction = None
+
+            elif current_status == 'STOPPED':
+                print "Already stopped. Ignoring order"
+
+            else:
+                print "Unknown combination of command/status : {0}/{1}".format(self.command, current_status)
+
+        elif self.command == 'RESET':
+            if current_status == 'MOVING':
+                print "Closing current action and resetting"
+                self.SaveAndPublishStatus('CLOSING')
+                self.NextAction = 'RESET'
+
+            elif current_status == 'ERROR':
+                print "Current status is 'ERROR'. Trying the reset"
+                self.SaveAndPublishStatus('RESETING')
+                self.NextAction = None
+                self.ResetLegsPositions()
+
+            elif current_status == 'CLOSING':
+                print "Added Reset at the end of current 'CLOSING' action"
+                self.NextAction = 'RESET'
+
+            elif current_status == 'STOPPED':
+                print "Starting Reset"
+                self.SaveAndPublishStatus('RESETING')
+                self.NextAction = None
+                self.ResetLegsPositions()
+
+            elif current_status == 'RESETING':
+                print "Currently reseting while sent reset order. Ignoring order."
+                self.NextAction = None
+
+            elif current_status == 'SETHING':
+                print "Currently setting height, should already have reset legs. Ignoring order."
+                self.NextAction = None
+                self.SaveAndPublishCommand('SETH')
+
+            else:
+                print "Unknown combination of command/status : {0}/{1}".format(self.command, current_status)
+
         elif self.command == 'SETH':
-            self.ResetLegsPositions(forSetHeight = True)
-            self.SetRobotHeight()
+            if current_status == 'MOVING':
+                print "Closing current action and setting height"
+                self.SaveAndPublishStatus('CLOSING')
+                self.NextAction = 'SETH'
+
+            elif current_status == 'ERROR':
+                print "Current status is 'ERROR'. Try reset first. Ignoring order"
+                self.NextAction = None
+                self.SaveAndPublishCommand('ERROR')
+
+            elif current_status == 'CLOSING':
+                print "Added Set Height at the end of current 'CLOSING' action"
+                self.NextAction = 'SETH'
+
+            elif current_status == 'STOPPED':
+                print "Starting Height Set global execution"
+                self.NextAction = None
+                self.SaveAndPublishStatus('SETHING')
+                self.ResetLegsPositions(forSetHeight = True)
+
+            elif current_status == 'RESETING':
+                print "Added SetHeight at the end of current reset"
+                self.NextAction = 'SETH'
+
+            elif current_status == 'SETHING':
+                self.NextAction = None
+                print "Currently setting height. Ignoring order."
+
+            else:
+                print "Unknown combination of command/status : {0}/{1}".format(self.command, current_status)
+
+        elif self.command == 'MOVE':
+            if current_status == 'MOVING':
+                print "Error, sent moving while already moving. Should not happend, ignoring order"
+
+            elif current_status == 'ERROR':
+                print "Dangerous to restart while currently in ERROR. Try reset first. Ignoring order."
+                self.NextAction = None
+                self.SaveAndPublishCommand('ERROR')
+        
+            elif current_status == 'CLOSING' or current_status == 'RESETING' or current_status == 'SETHING':
+                print "Added Move at  the end of current action"
+                self.NextAction = 'MOVE'
+
+            elif current_status == 'STOPPED':
+                print "Starting MOVING"
+                self.NextAction = None
+                self.SaveAndPublishStatus('MOVING')
+                self.Move()
+
+            else:
+                print "Unknown combination of command/status : {0}/{1}".format(self.command, self.status)
+
+        else:
+            print "Unknown command. VERY weird (from Robot class). For safety, passing in 'ERROR' status"
+            self.SaveAndPublishCommand('ERROR')
+
 
     def UpdateHeight(self, heightMessage):
         self.NewHeight = heightMessage.data
@@ -186,11 +313,18 @@ class Robot:
         self.computeDeltasT()
         print "Set speed ratio to {0}".format(self.speedRatio)
 
+    def UpdateDirection(self, directionMessage):
+        self.Direction = directionMessage.data
+
     def SaveAndPublishCommand(self, command):
         self.command = command
-        print "self publishing command"
+        print "self publishing command {0}".format(command)
         self.command_publisher.publish(command)
 
+    def SaveAndPublishStatus(self, status):
+        self.status = status
+        print "Updating status to {0}".format(status)
+        self.status_publisher.publish(status)
 
     def get_relative_point(self, final_absolute_feet_position, flightend_absolute_robot_position, flightend_absolute_robot_orientation, leg_to_raise):
         '''Get final_feet_position in the leg referential when the leg is supposed to land.
@@ -241,7 +375,7 @@ class Robot:
             if leg.status == 'up':
                 n_legs_up += 1
         print "Closing flight. Still {0} to land".format(n_legs_up)
-        while n_legs_up > 0:
+        while n_legs_up > 0 and self.status == 'CLOSING':
             cycle_end += 1
             # We set the different history variables for this cycle
             self.angles_history += [[]]
@@ -275,8 +409,29 @@ class Robot:
                     leg.check_landing(cycle_end)
                     if leg.status == 'down':
                         n_legs_up -= 1
+            if self.status == 'CLOSING':
+                self.ConcatenateAnglesAndPublish()
 
         print "All legs landed at final cycle {0}.".format(cycle_end)
+        self.SaveAndPublishStatus('STOPPED')
+        self.ExecuteNextAction()
+
+    def ExecuteNextAction(self):
+        if self.status != 'STOPPED':
+            print "Starting next action while not stopped. WEIRD !"
+        if self.NextAction == None:
+            print "No next action defined"
+        elif self.NextAction == 'RESET':
+            self.NextAction = None
+            self.ResetLegsPositions(forSetHeight = False)
+        elif self.NextAction == 'SETH':
+            self.NextAction = None
+            self.ResetLegsPositions(forSetHeight = True)
+        elif self.NextAction == 'MOVE':
+            self.NextAction = None
+            self.Move()
+        else:
+            print "Unknown NextAction"
 
     def compute_move_data(self, final_position, final_orientation, N_points):
         if final_orientation == None:
@@ -317,6 +472,7 @@ class Robot:
     def ResetLegsPositions(self, forSetHeight = False):
         '''Function to reset the legs to their original state'''
         order_th = [0,4,2,3,1,5]
+        print "Starting Reset"
 
         order = []
         for leg in self.Legs:
@@ -330,7 +486,7 @@ class Robot:
         time_one_leg = 1.
 
         for leg_id in order:
-            if self.command != 'MOVE':
+            if self.status != 'RESETING' and self.status != 'SETHING':
                 break
             print "Reseting leg {0}".format(leg_id)
             leg = self.Legs[leg_id]
@@ -342,7 +498,7 @@ class Robot:
                 leg.status = 'up'
                 leg.cycle_takeoff = 0
                 while leg.status != 'down':
-                    if self.command != 'RESET':
+                    if self.status != 'RESETING' and self.status != 'SETHING':
                         break
                     cycle += 1
                     if (cycle - leg.cycle_takeoff) <= len(leg.flight)-1:
@@ -360,8 +516,12 @@ class Robot:
                     last_publish = time.time()
                     leg.check_landing(cycle)
             print "Reset for leg {0} ended at cycle {1}".format(leg_id, cycle)
-        if not forSetHeight:
-            self.SaveAndPublishCommand('STOP')
+        if forSetHeight:
+            self.SetRobotHeight()
+        
+        else:
+            self.SaveAndPublishStatus('STOPPED')
+            self.ExecuteNextAction()
 
     def SetRobotHeight(self):
         initial_time = time.time()
@@ -372,7 +532,7 @@ class Robot:
 
             for current_height in heights[:-1]:
                 self.position[2] = current_height
-                if self.command != 'SETH':
+                if self.status != 'SETHING':
                     break
                 for leg in self.Legs:
                     leg.set_height(current_height)
@@ -389,9 +549,9 @@ class Robot:
         else:
             print "Nothing to do here !"
         self.h = self.NewHeight
-        self.SaveAndPublishCommand('STOP')
 
-
+        self.SaveAndPublishStatus('STOPPED')
+        self.ExecuteNextAction()
 
     def GoTo(self, final_position, rotation_factor = 0.1):
         '''
@@ -411,7 +571,7 @@ class Robot:
 
         last_cycle_time = time.time()
         for cycle in range(1, N_points):
-            if self.command != 'MOVE':
+            if self.status != 'MOVING':
                 break
         # We start at cycle 1 since 0 is the initial position.
             print ""
@@ -483,15 +643,6 @@ class Robot:
                     leg.check_landing(cycle)
                     demands += [0]
 
-#                elif leg.status == 'end': # If the leg reached its final position. Basically here we only do data saving
-#                    legs_down += 1
-#                    leg.relative_feet_position = leg.get_leg_relative_position(self)
-#                    leg.update_angles_from_position()
-#                    self.angles_history[-1] += [leg.angles] 
-#                    self.absolute_feet_positions_history[-1] += [leg.absolute_feet_position]
-#                    self.relative_feet_positions_history[-1] += [leg.relative_feet_position]
-#
-#                    demands += [0]
                 else:
                     print "Unknown status for leg {0} : {1}".format(leg.leg_id, leg.status)
                     self.SaveAndPublishCommand('ERROR')
@@ -590,9 +741,11 @@ class Robot:
 
             while time.time() - last_cycle_time < self.DeltaTGoto:
                 time.sleep(self.DeltaTGoto/10)
-            self.ConcatenateAnglesAndPublish()
-            self.PublishRobotData()
-            last_publish = time.time()
+            if self.status != 'MOVING':
+                self.ConcatenateAnglesAndPublish()
+                self.PublishRobotData()
+                last_publish = time.time()
         if self.command != 'ERROR':
             self.close_flights(cycle)
-        self.SaveAndPublishCommand('STOP')
+        self.SaveAndPublishStatus('STOPPED')
+        self.ExecuteNextAction()

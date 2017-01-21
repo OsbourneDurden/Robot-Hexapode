@@ -25,7 +25,11 @@ class GUI:
         self.h.set("14.1")
         self.speed = Tkinter.StringVar()
         self.speed.set("0.")
+        self.speedSet = False
         self.command = "STOP"
+        self.status = "Unknown"
+        self.SetHeightButtonColor = 'orange'
+
         self.commandDictionnary = {}
         self.commandDictionnary['STOP']=0
         self.commandDictionnary['MOVE']=1
@@ -100,6 +104,7 @@ class GUI:
         self.ButtonRight.pack(side = Tkinter.LEFT)
         self.master.bind("<KeyRelease>", self.keyReleaseCallback)
 
+        print "Starting ROSWorker class"
         self.RosWorker = ROSWorker(self)
 
         ParametersWindow = Tkinter.Frame(self.master, borderwidth=2)
@@ -108,34 +113,35 @@ class GUI:
         HLabel.grid(row=0, column = 0)
         self.HEntry = Tkinter.Entry(ParametersWindow, textvariable=self.h)
         self.HEntry.grid(row=0, column=1)
-        self.HButton = Tkinter.Button(ParametersWindow, text="Set Height", command=self.RosWorker.SetH)
+        self.HButton = Tkinter.Button(ParametersWindow, text="Set Height", background = 'gray', command=self.RosWorker.SetH)
         self.HButton.grid(row=0, column=2)
         SpeedLabel = Tkinter.Label(ParametersWindow, text="Speed = ")
         SpeedLabel.grid(row=1, column = 0)
         self.SpeedEntry = Tkinter.Entry(ParametersWindow, textvariable=self.speed)
         self.SpeedEntry.grid(row=1, column=1)
-        self.SpeedButton = Tkinter.Button(ParametersWindow, text="Set Speed", command=self.RosWorker.SetSpeed)
+        self.SpeedButton = Tkinter.Button(ParametersWindow, text="Set Speed", background = 'orange', command=self.RosWorker.SetSpeed)
         self.SpeedButton.grid(row=1, column=2)
 
         CommandWindow = Tkinter.Frame(self.master, borderwidth=2)
         CommandWindow.grid(row = 5, column = 4)
+        self.StatusLabel = Tkinter.Label(CommandWindow, text="Current status : " + self.status)
+        self.StatusLabel.grid(row=0, column = 0, columnspan = 4)
         self.CommandLabel = Tkinter.Label(CommandWindow, text="Current command : " + self.command)
-        self.CommandLabel.grid(row=0, column = 0, columnspan = 4)
+        self.CommandLabel.grid(row=1, column = 0, columnspan = 4)
         self.StopButton = Tkinter.Button(CommandWindow, text = "  \nSTOP\n  ", background = 'red', command = lambda: self.SetCommand(0))
-        self.StopButton.grid(row=1, column = 0)
-        self.MoveButton = Tkinter.Button(CommandWindow, text = "  \nMove\n  ", background = 'gray', command = lambda: self.SetCommand(1))
-        self.MoveButton.grid(row=1, column = 1)
-        self.ResetButton = Tkinter.Button(CommandWindow, text = "  \nReset\n  ", background = 'gray', command = lambda: self.SetCommand(2))
-        self.ResetButton.grid(row=1, column = 2)
-        self.SetHeightButton = Tkinter.Button(CommandWindow, text = "  \nSet Height\n  ", background = 'gray', command = lambda: self.SetCommand(3))
-        self.SetHeightButton.grid(row=1, column = 3)
+        self.StopButton.grid(row=2, column = 0)
+        self.MoveButton = Tkinter.Button(CommandWindow, text = "  \nMove\n  ", background = 'red', command = lambda: self.SetCommand(1))
+        self.MoveButton.grid(row=2, column = 1)
+        self.ResetButton = Tkinter.Button(CommandWindow, text = "  \nReset\n  ", background = 'red', command = lambda: self.SetCommand(2))
+        self.ResetButton.grid(row=2, column = 2)
+        self.SetHeightButton = Tkinter.Button(CommandWindow, text = "  \nSet Height\n  ", background = 'red', command = lambda: self.SetCommand(3))
+        self.SetHeightButton.grid(row=2, column = 3)
 
         self.UpdateCommand()
+        self.UpdateStatus()
 
-        print "Starting ROSThread class"
 
         #self.RosProcess = Process(target = self.RosWorker.run(),  args=())
-
 
         self.N = 1
         self.UpdatePlot()
@@ -145,34 +151,40 @@ class GUI:
         self.UpdateMap()
     
     def SetCommand(self, commandValue, from_outside = False):
-        self.MoveButton.configure(background = 'gray')
-        self.StopButton.configure(background = 'gray')
-        self.SetHeightButton.configure(background = 'gray')
-        self.ResetButton.configure(background = 'gray')
-        if self.command == 'ERROR':
-            print "Unable to change command due to status 'ERROR'"
-        else:
-            if commandValue == 0:
-                self.command = "STOP"
-                self.StopButton.configure(background = 'red')
-            elif commandValue == 1:
-                self.command = "MOVE"
-                self.MoveButton.configure(background = 'green')
-            elif commandValue == 2:
-                self.command = "RESET"
-                self.ResetButton.configure(background = 'green')
-            elif commandValue == 3:
-                self.command = "SETH"
-                self.SetHeightButton.configure(background = 'green')
-            elif commandValue == 4:
-                self.command = 'ERROR'
-                self.SetHeightButton.configure(background = 'red')
-                self.ResetButton.configure(background = 'red')
-                self.MoveButton.configure(background = 'red')
-                self.StopButton.configure(background = 'red')
-
+        if self.speedSet:
+            self.MoveButton.configure(background = 'gray')
+            self.StopButton.configure(background = 'gray')
+            self.SetHeightButton.configure(background = 'gray')
+            self.ResetButton.configure(background = 'gray')
+            if self.command == 'ERROR':
+                print "Current command is ERROR. Filtring dangerous commands"
+            else:
+                self.SetHeightButton.configure(background = self.SetHeightButtonColor)
+                if commandValue == 0:
+                    if self.command != 'ERROR':
+                        self.command = "STOP"
+                        self.StopButton.configure(background = 'green')
+                elif commandValue == 1:
+                    if self.command != 'ERROR':
+                        self.command = "MOVE"
+                        self.MoveButton.configure(background = 'green')
+                elif commandValue == 2:
+                    self.command = "RESET"
+                    self.ResetButton.configure(background = 'green')
+                elif commandValue == 3:
+                    if self.command != 'ERROR':
+                        self.command = "SETH"
+                        self.SetHeightButton.configure(background = 'green')
+                elif commandValue == 4:
+                    self.command = 'ERROR'
+                    self.SetHeightButton.configure(background = 'red')
+                    self.MoveButton.configure(background = 'red')
+                    self.StopButton.configure(background = 'red')
+                    
             if not from_outside:
                 self.RosWorker.CommandPub.publish(self.command)
+                if self.command == 'SETH':
+                    self.SetHeightButtonColor = 'gray'
 
     def UpdatePlot(self):
         t = arange(0.0, 3.0, 0.01)
@@ -199,6 +211,10 @@ class GUI:
         self.SetCommand(self.commandDictionnary[self.command], from_outside=True)
         self.master.after(50,  self.UpdateCommand)
 
+    def UpdateStatus(self):
+        self.StatusLabel['text'] = "Current status : " + self.status
+        self.master.after(50,  self.UpdateStatus)
+
     def UpdatePosition(self):
         self.SubPlotPosition.plot(self.position[0], self.position[1], 'xr')
         self.PositionCanvas.show()
@@ -222,7 +238,7 @@ class GUI:
             self.SetDirection(2)
 
     def SetDirection(self, directionNumber):
-        print "Setting direction"
+        print "Setting direction, direction number = {0}".format(directionNumber)
         if directionNumber == 0:
             self.RosWorker.DirPub.publish(np.array([0., 0., 1.], dtype = np.float32))
         elif directionNumber == 1:
@@ -244,6 +260,7 @@ class ROSWorker():
         rospy.init_node('GUI', anonymous=True)
         self.image_sub_right = rospy.Subscriber("/stereo/right/image_raw", Image, self.PictureCallback)
         self.commandSubscriber = rospy.Subscriber('command', String, self.CommandCallback)
+        self.statusSubscriber = rospy.Subscriber('status', String, self.StatusCallback)
         self.positionSubscriber = rospy.Subscriber('position', numpy_msg(Floats), self.PositionCallback)
         self.orientationSubscriber = rospy.Subscriber('orientation', numpy_msg(Floats), self.OrientationCallback)
         self.DirPub = rospy.Publisher("direction", numpy_msg(Floats),queue_size=1)
@@ -268,6 +285,9 @@ class ROSWorker():
     
     def CommandCallback(self, data):
         self.WindowManager.command = data.data
+    
+    def StatusCallback(self, data):
+        self.WindowManager.status = data.data
 
     def PositionCallback(self, data):
         self.WindowManager.position = data.data
@@ -278,8 +298,15 @@ class ROSWorker():
 
     def SetH(self):
         self.HeightPub.publish(float(self.WindowManager.h.get()))
+        self.SetHeightButtonColor = 'orange'
+        if self.status != 'ERROR':
+            self.SetHeightButton.configure(background = self.SetHeightButtonColor)
+
     def SetSpeed(self):
         if 0 < float(self.WindowManager.speed.get()) <=1:
+            self.WindowManager.speedSet = True
+            self.WindowManager.SpeedButton.configure(background = 'gray')
+            self.WindowManager.SetCommand(self.WindowManager.commandDictionnary[self.WindowManager.command], True) # Fake line to easily reset command buttons colors
             self.SpeedPub.publish(float(self.WindowManager.speed.get()))
         else:
             print "Wrong speed value"
