@@ -22,8 +22,11 @@ class Robot:
             self.command = 'STOP'
             self.speedRatio = 0.
             self.h = float(geometry_data['H'])
+            self.NewHeight = self.h
 
             self.motor_publishers = [rospy.Publisher("angles_raw_leg_{0}".format(i), numpy_msg(Floats),queue_size=1) for i in range(self.N_legs)]
+            self.position_publisher = rospy.Publisher("position", numpy_msg(Floats),queue_size=1)
+            self.orientation_publisher = rospy.Publisher("orientation", numpy_msg(Floats),queue_size=1)
             self.command_publisher = rospy.Publisher("command", String, queue_size=1)
             rospy.Subscriber("command", String, self.UpdateCommand)
             rospy.Subscriber("speed", Float64, self.UpdateSpeed)
@@ -35,7 +38,7 @@ class Robot:
             self.N_points_by_cm = 30
             self.ResetTimeOneLeg = 1. #In seconds
             self.NPointsResetFlight = 30
-            self.SetHeightSpeed = 0.5 # In cm/s
+            self.SetHeightSpeed = 1 # In cm/s
             self.NPointsSetHeight = 30
             self.computeDeltasT()
         
@@ -121,6 +124,7 @@ class Robot:
                 
             self.position = np.array([0., 0., self.h]) # Initial position. At the initialisation, the robot is at the vertical of its landmark
             self.orientation = np.array([1., 0., 0.]) # Initial orientation. At the initialisation, the robot is along the x axis
+            self.PublishRobotData()
 
             self.compute_refchanging_rob_to_abs_matrix()
             
@@ -151,11 +155,15 @@ class Robot:
             AnglesMessage = np.array(leg.angles, dtype = np.float32)
             self.motor_publishers[leg.leg_id].publish(AnglesMessage)
 
+    def PublishRobotData(self):
+        self.position_publisher.publish(np.array(self.position, dtype= np.float32))
+        self.orientation_publisher.publish(np.array(self.orientation, dtype= np.float32))
+
     def computeDeltasT(self):
         if self.speedRatio != 0:
             self.DeltaTGoto = 1./(self.N_points_by_cm * self.speedRatio * self.speed)
             self.DeltaTReset = self.ResetTimeOneLeg/(self.speedRatio*self.NPointsResetFlight)
-            self.DeltaTSetHeight = 1./(self.NPointsSetHeight * self.speedRatio * self.SetHeightSpeed)
+            self.DeltaTSetHeight = 1./(self.speedRatio * self.SetHeightSpeed * self.NPointsSetHeight)
         else:
             print "Unable to compute DeltaTs, since self.speedRatio is 0. Waiting for speed ratio update."
 
@@ -165,12 +173,12 @@ class Robot:
         if self.command == 'RESET':
             self.ResetLegsPositions()
         elif self.command == 'SETH':
-            self.ResetLegsPositions()
+            self.ResetLegsPositions(forSetHeight = True)
             self.SetRobotHeight()
 
     def UpdateHeight(self, heightMessage):
         self.NewHeight = heightMessage.data
-        print "Set New height to {0}. Sending activation command.".format(self.h)
+        print "Set New height to {0}. Waiting for activation command.".format(self.NewHeight)
         #self.SaveAndPublishCommand('SETH')
 
     def UpdateSpeed(self, speedRatioMessage):
@@ -180,7 +188,9 @@ class Robot:
 
     def SaveAndPublishCommand(self, command):
         self.command = command
+        print "self publishing command"
         self.command_publisher.publish(command)
+
 
     def get_relative_point(self, final_absolute_feet_position, flightend_absolute_robot_position, flightend_absolute_robot_orientation, leg_to_raise):
         '''Get final_feet_position in the leg referential when the leg is supposed to land.
@@ -249,8 +259,12 @@ class Robot:
                 else:
                     if (cycle_end - leg.cycle_takeoff) <= len(leg.flight)-1:
                         leg.follow_flight(cycle_end)
+                        if leg.angles == None:
+                            self.SaveAndPublishCommand('ERROR')
                     else:
                         leg.extend_flight()
+                        if leg.angles == None:
+                            self.SaveAndPublishCommand('ERROR')
                     
                     leg.absolute_feet_position = leg.get_leg_absolute_position(self)
                     print "New absolute position of leg {0} : {1}".format(leg.leg_id,  leg.absolute_feet_position)
@@ -300,7 +314,7 @@ class Robot:
 
             return positions, orientations
 
-    def ResetLegsPositions(self):
+    def ResetLegsPositions(self, forSetHeight = False):
         '''Function to reset the legs to their original state'''
         order_th = [0,4,2,3,1,5]
 
@@ -333,36 +347,48 @@ class Robot:
                     cycle += 1
                     if (cycle - leg.cycle_takeoff) <= len(leg.flight)-1:
                         leg.follow_flight(cycle)
+                        if leg.angles == None:
+                            self.SaveAndPublishCommand('ERROR')
                         AnglesMessage = np.array(leg.angles, dtype = np.float32)
                     else:
                         leg.extend_flight()
+                        if leg.angles == None:
+                            self.SaveAndPublishCommand('ERROR')
                     while time.time()-last_publish < self.DeltaTReset:
                         time.sleep(self.DeltaTReset/10)
                     self.motor_publishers[leg.leg_id].publish(AnglesMessage)
                     last_publish = time.time()
                     leg.check_landing(cycle)
             print "Reset for leg {0} ended at cycle {1}".format(leg_id, cycle)
-        self.SaveAndPublishCommand('STOP')
+        if not forSetHeight:
+            self.SaveAndPublishCommand('STOP')
 
     def SetRobotHeight(self):
+        initial_time = time.time()
         print "Setting height from {0} to {1}".format(self.h, self.NewHeight)
         if self.NewHeight != self.h:
             heights = np.linspace(self.h, self.NewHeight, self.NPointsSetHeight)
             last_publish = time.time()
-            for current_height in heights:
+
+            for current_height in heights[:-1]:
+                self.position[2] = current_height
                 if self.command != 'SETH':
                     break
                 for leg in self.Legs:
-                    leg.set_height(current_h)
+                    leg.set_height(current_height)
                     leg.update_angles_from_position()
+                    if leg.angles == None:
+                        self.SaveAndPublishCommand('ERROR')
 
-                while time.time()-last_publish < self.DeltaTSetHeight:
-                    time.sleep(self.DeltaTReset/10)
+                while time.time()-last_publish < abs(self.NewHeight - self.h)*self.DeltaTSetHeight:
+                    time.sleep(self.DeltaTSetHeight/10)
                 self.ConcatenateAnglesAndPublish()
+                self.PublishRobotData()
                 last_publish = time.time()
-            print "Done after {0} cycles.".format(len(heights))
+            print "Done after {0} cycles, in {1:.2} seconds.".format(len(heights), time.time() - initial_time)
         else:
             print "Nothing to do here !"
+        self.h = self.NewHeight
         self.SaveAndPublishCommand('STOP')
 
 
@@ -413,6 +439,8 @@ class Robot:
                     legs_down += 1
                     leg.relative_feet_position = leg.get_leg_relative_position(self) # We first update the relative position of the grounded legs
                     leg.update_angles_from_position() # We update the new angles for this relative position
+                    if leg.angles == None:
+                        self.SaveAndPublishCommand('ERROR')
                     if np.isnan(leg.angles).any():
                         self.SaveAndPublishCommand('ERROR')
                     self.angles_history[-1] += [leg.angles] 
@@ -439,8 +467,12 @@ class Robot:
                 elif leg.status == 'up': # If the leg is currently moving in the air, towards a designed position.
                     if (cycle - leg.cycle_takeoff) <= len(leg.flight)-1:
                         leg.follow_flight(cycle)
+                        if leg.angles == None:
+                            self.SaveAndPublishCommand('ERROR')
                     else:
                         leg.extend_flight()
+                        if leg.angles == None:
+                            self.SaveAndPublishCommand('ERROR')
                     
                     leg.absolute_feet_position = leg.get_leg_absolute_position(self)
                     print "New absolute position of leg {0} : {1}".format(leg.leg_id,  leg.absolute_feet_position)
@@ -559,6 +591,7 @@ class Robot:
             while time.time() - last_cycle_time < self.DeltaTGoto:
                 time.sleep(self.DeltaTGoto/10)
             self.ConcatenateAnglesAndPublish()
+            self.PublishRobotData()
             last_publish = time.time()
         if self.command != 'ERROR':
             self.close_flights(cycle)

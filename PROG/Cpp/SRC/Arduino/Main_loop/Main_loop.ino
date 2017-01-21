@@ -1,6 +1,7 @@
 #include <ros.h>
 #include <std_msgs/Float32.h> // For the sonar data
 #include <std_msgs/String.h> // For the leg contacts data
+#include <std_msgs/Bool.h>
 
 const int sonarFrontPin = 8;
 
@@ -9,7 +10,7 @@ char legs_string[12] = "0&0&0&0&0&0";
 
 std_msgs::Float32 sonar_front_msg;
 ros::Publisher pub_sonar_front("sonar_front", &sonar_front_msg);
-
+ros::Subscriber<std_msgs/Bool> sub("led", &ledCallback );
 std_msgs::String legs_msg;
 
 ros::Publisher pub_legs("legs_contacts", &legs_msg);
@@ -43,6 +44,11 @@ void setup()
   
   last_publish_sonars = millis()  - update_sonars_timeconstant_ms;
   last_publish_legs = millis()  - update_legs_timeconstant_ms;
+}
+
+void ledCallback(const std_msgs::Bool& ledMsg)
+{
+  digitalWrite(ledPin, ledMsg.data);
 }
 
 void loop()

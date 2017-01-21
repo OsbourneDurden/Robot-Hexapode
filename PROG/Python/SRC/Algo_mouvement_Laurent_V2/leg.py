@@ -120,10 +120,12 @@ class Leg:
 
         R = np.sqrt(x**2+y**2)
         alpha = np.arctan(y/x)
-                
-        theta = np.arccos(((R-self.l1)**2 + z**2 + self.l2**2 - self.l3**2)
-                /(2 * self.l2 * np.sqrt((R-self.l1)**2 + z**2)))
-        theta2 = -np.arctan((R-self.l1)/z) #possible "-"z missing
+        try:        
+            theta = np.arccos(((R-self.l1)**2 + z**2 + self.l2**2 - self.l3**2)
+                    /(2 * self.l2 * np.sqrt((R-self.l1)**2 + z**2)))
+            theta2 = -np.arctan((R-self.l1)/z) #possible "-"z missing
+        except:
+            return None
         
         beta = np.pi/2-(theta+theta2)
         if R > self.l1 + np.cos(beta)*self.l2:
@@ -138,9 +140,9 @@ class Leg:
         angles = self.get_angles_from(self.relative_feet_position)
         if angles != None:
             print "Changing angles for leg {4} : {0},{1} and {2} from position {3}".format(angles[0], angles[1], angles[2], self.relative_feet_position, self.leg_id)
-            self.angles = angles
         else:
             print "Unable to find angles for leg {0} at position {1}".format(self.leg_id, self.relative_feet_position)
+        self.angles = angles
 
     def get_leg_absolute_position(self, robot):
         return robot.position + robot.rotate_vector_to_absolute_from_robot(self.fix_position + self.rotate_vector_to_robot_from_leg(self.relative_feet_position))

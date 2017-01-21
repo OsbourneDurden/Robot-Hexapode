@@ -26,30 +26,44 @@ class GUI:
         self.speed = Tkinter.StringVar()
         self.speed.set("0.")
         self.command = "STOP"
-        
+        self.commandDictionnary = {}
+        self.commandDictionnary['STOP']=0
+        self.commandDictionnary['MOVE']=1
+        self.commandDictionnary['RESET']=2
+        self.commandDictionnary['SETH']=3
+        self.commandDictionnary['ERROR']=4
+
+        self.position = np.array([0., 0., 0.])
+        self.orientation = np.array([1., 0., 0.])
         self.master.title("Cornelius GUI")
 
         self.label = Tkinter.Label(self.master, text="Main commands")
         self.label.grid(row = 0, columnspan=5, sticky = 'EW')
         
         LegsWindow = Tkinter.Frame(self.master, borderwidth=2)
-        LegsWindow.grid(row=1,  column = 0)
-        self.LegsLabels = [Tkinter.Label(LegsWindow, text="{0}".format(n_leg), bg="red", fg="white") for n_leg in range(6)]
+        LegsWindow.grid(row=1,  column = 0, rowspan = 2)
+        self.LegsLabels = [Tkinter.Label(LegsWindow, text="  \n  {0}  \n  ".format(n_leg), bg="red", fg="white") for n_leg in range(6)]
         for n_legLabel in range(len(self.LegsLabels)):
             self.LegsLabels[n_legLabel].grid(row = int(0+n_legLabel/3), column = n_legLabel%3)
 
-        self.greet_button = Tkinter.Button(self.master, text="Plot", command=self.UpdatePlot)
-        self.greet_button.grid(row=1, column=3, rowspan = 2)
-        
-        self.close_button = Tkinter.Button(self.master, text="Picture", command=self.UpdatePicture)
-        self.close_button.grid(row=1, column=4, rowspan = 2)
-
         self.master.protocol("WM_DELETE_WINDOW", self.master.quit)
+
+        RobotDataWindow = Tkinter.Frame(self.master, borderwidth = 2)
+        RobotDataWindow.grid(row = 1, column = 4)
+        self.PositionLabel = Tkinter.Label(RobotDataWindow, text = "Position : ")
+        self.PositionLabel.grid(row=0, column = 0)
+        self.OrientationLabel = Tkinter.Label(RobotDataWindow, text = "Orientation : ")
+        self.OrientationLabel.grid(row=1, column = 0)
 
         self.PlotPlot = Figure(figsize=(5, 4), dpi=100)
         self.SubPlotPlot = self.PlotPlot.add_subplot(111)
         self.PlotCanvas = FigureCanvasTkAgg(self.PlotPlot, master=self.master)
         self.PlotCanvas.get_tk_widget().grid(row = 3, column = 0, columnspan = 4)
+        
+        self.PlotPosition = Figure(figsize=(5, 4), dpi=100)
+        self.SubPlotPosition = self.PlotPosition.add_subplot(111)
+        self.PositionCanvas = FigureCanvasTkAgg(self.PlotPosition, master=self.master)
+        self.PositionCanvas.get_tk_widget().grid(row = 4, column = 0, columnspan = 4)
         
         f = Figure(figsize=(5, 4), dpi=100)
         self.SubPlotPicture = f.add_subplot(111)
@@ -58,8 +72,13 @@ class GUI:
         self.PictureCanvas.show()
         self.PictureCanvas.get_tk_widget().grid(row = 3, column = 4, columnspan = 1)
 
+        self.PlotMap = Figure(figsize=(5, 4), dpi=100)
+        self.SubPlotMap = self.PlotPosition.add_subplot(111)
+        self.MapCanvas = FigureCanvasTkAgg(self.PlotPosition, master=self.master)
+        self.MapCanvas.get_tk_widget().grid(row = 4, column = 4, columnspan = 1)
+        
         DirectionWindow = Tkinter.Frame(self.master, borderwidth=2)
-        DirectionWindow.grid(row = 4, column = 0, columnspan = 3)
+        DirectionWindow.grid(row = 5, column = 0, columnspan = 3)
         self.master.bind("<KeyPress>", self.keyEventCallback)
         left = Tkinter.PhotoImage(file='Icons/up_left.png')
         self.ButtonLeft = Tkinter.Button(DirectionWindow, width=50, height=50, image=left, bg='gray')
@@ -84,7 +103,7 @@ class GUI:
         self.RosWorker = ROSWorker(self)
 
         ParametersWindow = Tkinter.Frame(self.master, borderwidth=2)
-        ParametersWindow.grid(row = 4, column = 3)
+        ParametersWindow.grid(row = 5, column = 3)
         HLabel = Tkinter.Label(ParametersWindow, text="H = ")
         HLabel.grid(row=0, column = 0)
         self.HEntry = Tkinter.Entry(ParametersWindow, textvariable=self.h)
@@ -99,15 +118,17 @@ class GUI:
         self.SpeedButton.grid(row=1, column=2)
 
         CommandWindow = Tkinter.Frame(self.master, borderwidth=2)
-        CommandWindow.grid(row = 4, column = 4)
+        CommandWindow.grid(row = 5, column = 4)
         self.CommandLabel = Tkinter.Label(CommandWindow, text="Current command : " + self.command)
-        self.CommandLabel.grid(row=0, column = 0, columnspan = 3)
-        self.StopButton = Tkinter.Button(CommandWindow, text = "STOP", command = lambda event, d=0: self.SetCommand(d))
+        self.CommandLabel.grid(row=0, column = 0, columnspan = 4)
+        self.StopButton = Tkinter.Button(CommandWindow, text = "  \nSTOP\n  ", background = 'red', command = lambda: self.SetCommand(0))
         self.StopButton.grid(row=1, column = 0)
-        self.MoveButton = Tkinter.Button(CommandWindow, text = "Move", command = lambda event, d=1: self.SetCommand(d))
+        self.MoveButton = Tkinter.Button(CommandWindow, text = "  \nMove\n  ", background = 'gray', command = lambda: self.SetCommand(1))
         self.MoveButton.grid(row=1, column = 1)
-        self.SetHeightButton = Tkinter.Button(CommandWindow, text = "Set Height", command = lambda event, d=2: self.SetCommand(d))
-        self.SetHeightButton.grid(row=2, column = 1)
+        self.ResetButton = Tkinter.Button(CommandWindow, text = "  \nReset\n  ", background = 'gray', command = lambda: self.SetCommand(2))
+        self.ResetButton.grid(row=1, column = 2)
+        self.SetHeightButton = Tkinter.Button(CommandWindow, text = "  \nSet Height\n  ", background = 'gray', command = lambda: self.SetCommand(3))
+        self.SetHeightButton.grid(row=1, column = 3)
 
         self.UpdateCommand()
 
@@ -119,12 +140,41 @@ class GUI:
         self.N = 1
         self.UpdatePlot()
         self.UpdatePicture()
+        self.UpdateRobotData()
+        self.UpdatePosition()
+        self.UpdateMap()
     
-    def SetCommand(self, commandValue):
-        None
+    def SetCommand(self, commandValue, from_outside = False):
+        self.MoveButton.configure(background = 'gray')
+        self.StopButton.configure(background = 'gray')
+        self.SetHeightButton.configure(background = 'gray')
+        self.ResetButton.configure(background = 'gray')
+        if self.command == 'ERROR':
+            print "Unable to change command due to status 'ERROR'"
+        else:
+            if commandValue == 0:
+                self.command = "STOP"
+                self.StopButton.configure(background = 'red')
+            elif commandValue == 1:
+                self.command = "MOVE"
+                self.MoveButton.configure(background = 'green')
+            elif commandValue == 2:
+                self.command = "RESET"
+                self.ResetButton.configure(background = 'green')
+            elif commandValue == 3:
+                self.command = "SETH"
+                self.SetHeightButton.configure(background = 'green')
+            elif commandValue == 4:
+                self.command = 'ERROR'
+                self.SetHeightButton.configure(background = 'red')
+                self.ResetButton.configure(background = 'red')
+                self.MoveButton.configure(background = 'red')
+                self.StopButton.configure(background = 'red')
+
+            if not from_outside:
+                self.RosWorker.CommandPub.publish(self.command)
 
     def UpdatePlot(self):
-
         t = arange(0.0, 3.0, 0.01)
         s = sin(self.N*2*pi*t)
 
@@ -133,8 +183,12 @@ class GUI:
         self.PlotCanvas.show()
         self.N +=0.5
         
+    def UpdateRobotData(self):
+        self.PositionLabel['text'] = "Position : X = {0:.2}, Y = {1:.2}, Z = {2:.2}".format(self.position[0], self.position[1], self.position[2])
+        self.OrientationLabel['text'] = "Orientation : Ux = {0:.2}, Uy = {1:.2}, Uz = {2:.2}".format(self.orientation[0], self.orientation[1], self.orientation[2])
+        self.master.after(100, self.UpdateRobotData)
+
     def UpdatePicture(self):
-        print "Updating Picture"
         self.SubPlotPicture.clear()
         self.SubPlotPicture.imshow(self.img)
         self.PictureCanvas.show()
@@ -142,7 +196,18 @@ class GUI:
 
     def UpdateCommand(self):
         self.CommandLabel['text'] = "Current command : " + self.command
+        self.SetCommand(self.commandDictionnary[self.command], from_outside=True)
         self.master.after(50,  self.UpdateCommand)
+
+    def UpdatePosition(self):
+        self.SubPlotPosition.plot(self.position[0], self.position[1], 'xr')
+        self.PositionCanvas.show()
+        self.master.after(100, self.UpdatePosition)
+
+    def UpdateMap(self):
+        #self.SubPlotMap.plot(self.position[0], self.position[1])
+        self.PositionCanvas.show()
+        #self.master.after(1000, self.UpdatePosition)
 
     def keyReleaseCallback(self, event):
         self.KeyPressed = False
@@ -173,36 +238,43 @@ class ROSWorker():
         
 
         self.WindowManager = parent
-
-        rospy.init_node('GUI', anonymous=True)
-        self.image_sub_right = rospy.Subscriber("/stereo/right/image_raw", Image, self.PictureCallback)
-        self.commandSubscriber = rospy.Subscriber('command', String, self.CommandCallback)
-        self.DirPub = rospy.Publisher("direction", numpy_msg(Floats),queue_size=1)
-        self.HeightPub = rospy.Publisher("height", Float64 ,queue_size=1)
-        self.SpeedPub = rospy.Publisher("speed", Float64 ,queue_size=1)
         self.bridge = CvBridge()
 
         self.lastPictureUpdate = time.time()
+        rospy.init_node('GUI', anonymous=True)
+        self.image_sub_right = rospy.Subscriber("/stereo/right/image_raw", Image, self.PictureCallback)
+        self.commandSubscriber = rospy.Subscriber('command', String, self.CommandCallback)
+        self.positionSubscriber = rospy.Subscriber('position', numpy_msg(Floats), self.PositionCallback)
+        self.orientationSubscriber = rospy.Subscriber('orientation', numpy_msg(Floats), self.OrientationCallback)
+        self.DirPub = rospy.Publisher("direction", numpy_msg(Floats),queue_size=1)
+        self.HeightPub = rospy.Publisher("height", Float64 ,queue_size=1)
+        self.SpeedPub = rospy.Publisher("speed", Float64 ,queue_size=1)
+        self.CommandPub = rospy.Publisher("command", String, queue_size=1)
+
         
         #rospy.spin()
         
         print "Done with ROSWorker init"
     def PictureCallback(self, data):  
-        print "Callback"
         if time.time() - self.lastPictureUpdate > 0.1:
             try:
                 cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
             except CvBridgeError as e:
                 print(e)        
             cv_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
-            print (np.array(cv_image)<256).all()        
-            print (np.array(cv_image)>=0).all()
             
             self.WindowManager.img = cv_image
             self.lastPictureUpdate = time.time()
     
-    def CommandCallback(self,  data):
+    def CommandCallback(self, data):
         self.WindowManager.command = data.data
+
+    def PositionCallback(self, data):
+        self.WindowManager.position = data.data
+        print "New  Position"
+
+    def OrientationCallback(self, data):
+        self.WindowManager.orientation = data.data
 
     def SetH(self):
         self.HeightPub.publish(float(self.WindowManager.h.get()))
