@@ -48,7 +48,9 @@ class GUI:
         LegsWindow = Tkinter.Frame(self.master, borderwidth=2)
         LegsWindow.grid(row=1,  column = 0, rowspan = 2)
         self.LegsLabels = [Tkinter.Label(LegsWindow, text="  \n  {0}  \n  ".format(n_leg), bg="red", fg="white") for n_leg in range(6)]
+        self.LegsStatus = []
         for n_legLabel in range(len(self.LegsLabels)):
+            self.LegStatus += [0]
             self.LegsLabels[n_legLabel].grid(row = int(0+n_legLabel/3), column = n_legLabel%3)
 
         self.master.protocol("WM_DELETE_WINDOW", self.master.quit)
@@ -150,6 +152,7 @@ class GUI:
         self.UpdateRobotData()
         self.UpdatePosition()
         self.UpdateMap()
+        self.UpdateLegs()
     
     def SetCommand(self, commandValue, from_outside = False):
         if self.speedSet:
@@ -200,6 +203,14 @@ class GUI:
         self.PositionLabel['text'] = "Position : X = {0:.2}, Y = {1:.2}, Z = {2:.2}".format(self.position[0], self.position[1], self.position[2])
         self.OrientationLabel['text'] = "Orientation : Ux = {0:.2}, Uy = {1:.2}, Uz = {2:.2}".format(self.orientation[0], self.orientation[1], self.orientation[2])
         self.master.after(100, self.UpdateRobotData)
+
+    def UpdateLegs(self):
+        for n_leg in range(6):
+            if self.LegsStatus[n_leg] == 1:
+                self.LegsLabels[n_leg].configure(background = 'green')
+            else:
+                self.LegsLabels[n_leg].configure(background = 'red')
+        self.master.after(50, self.UpdateLegs)
 
     def UpdatePicture(self):
         self.SubPlotPicture.clear()
@@ -287,11 +298,7 @@ class ROSWorker():
 
     def ContactsCallback(self, contactsMessage):
         for n_leg in range(6):
-            if contactsMessage.data.split('&')[n_leg] == 1:
-                self.WindowManager.LegsLabels[n_leg].configure(background = 'green')
-            else:
-                self.WindowManager.LegsLabels[n_leg].configure(background = 'red')
-
+            self.WindowManager.LegsStatus[n_leg] = float(contactsMessage.split('&')[n_leg])
 
     def PictureCallback(self, data):  
         if time.time() - self.lastPictureUpdate > 0.1:
