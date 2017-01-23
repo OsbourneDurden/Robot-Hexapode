@@ -4,13 +4,18 @@
 #include <std_msgs/Bool.h>
 
 const int sonarFrontPin = 8;
-
-const int legsPins[6] = {2,3,4,5,6,7};
+const int ledPin = 13;
+const int legsPins[6] = {13,12,11,10,9,8};
 char legs_string[12] = "0&0&0&0&0&0";
+
+void ledCallback(const std_msgs::Bool& ledMsg)
+{
+  digitalWrite(ledPin, ledMsg.data);
+}
 
 std_msgs::Float32 sonar_front_msg;
 ros::Publisher pub_sonar_front("sonar_front", &sonar_front_msg);
-ros::Subscriber<std_msgs/Bool> sub("led", &ledCallback );
+ros::Subscriber<std_msgs::Bool> sub("led", &ledCallback );
 std_msgs::String legs_msg;
 
 ros::Publisher pub_legs("legs_contacts", &legs_msg);
@@ -18,17 +23,17 @@ ros::Publisher pub_legs("legs_contacts", &legs_msg);
 ros::NodeHandle nh;
 
 long update_sonars_timeconstant_ms = 300;
-long update_legs_timeconstant_ms = 20;
 long update_IMU_timeconstant_ms = 300;
 long update_IR_timeconstant_ms = 50;
 
-long update_delay = 3;
+long update_delay = 1;
 boolean published = 0;
 
 long last_publish_sonars;
-long last_publish_legs;
 long last_publish_IMU;
 long last_publish_IR;
+int prev_legs_contacts=0;
+int legs_contacts=0;
 
 void setup()
 {
@@ -43,12 +48,6 @@ void setup()
   nh.advertise(pub_legs);
   
   last_publish_sonars = millis()  - update_sonars_timeconstant_ms;
-  last_publish_legs = millis()  - update_legs_timeconstant_ms;
-}
-
-void ledCallback(const std_msgs::Bool& ledMsg)
-{
-  digitalWrite(ledPin, ledMsg.data);
 }
 
 void loop()
@@ -82,10 +81,11 @@ void loop()
   }
   
   // Taking care of legs contacts
-  if ((millis() - last_publish_legs) > update_legs_timeconstant_ms )
+  legs_contacts = calcStateLegs();
+  if (prev_legs_contacts != legs_contacts)
   {
     published = 1;
-    
+    prev_legs_contacts = legs_contacts;
     if (digitalRead(legsPins[0]) == HIGH) {legs_string[0] = '1';}
     else {legs_string[0] = '0';}    
     if (digitalRead(legsPins[1]) == HIGH) {legs_string[2] = '1';}
@@ -100,8 +100,6 @@ void loop()
     else {legs_string[10] = '0';}
     legs_msg.data = legs_string;
     pub_legs.publish(&legs_msg);
-    
-    last_publish_legs=millis();
   }
   
   nh.spinOnce();
@@ -114,3 +112,15 @@ long microsecondsToCentimeters(long microseconds) {
   // object we take half of the distance travelled.
   return microseconds / 29 / 2;
 }
+
+int calcStateLegs(){
+  int i;
+  int res=0;
+  for(i=0;i<6;i++){
+    if (digitalRead(legsPins[i]) == HIGH){
+      res+=2^i;
+    }
+  }
+  return res;
+}
+

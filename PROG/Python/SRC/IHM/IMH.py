@@ -29,6 +29,7 @@ class GUI:
         self.command = "STOP"
         self.status = "Unknown"
         self.SetHeightButtonColor = 'orange'
+        self.directionNumber = 0
 
         self.commandDictionnary = {}
         self.commandDictionnary['STOP']=0
@@ -102,7 +103,7 @@ class GUI:
         self.ButtonRight.bind("<Button-1>", lambda event, d=3: self.SetDirection(d))
         self.ButtonRight.bind("<ButtonRelease-1>", lambda event, d=0: self.SetDirection(d))
         self.ButtonRight.pack(side = Tkinter.LEFT)
-        self.master.bind("<KeyRelease>", self.keyReleaseCallback)
+        #self.master.bind("<KeyRelease>", self.keyReleaseCallback)
 
         print "Starting ROSWorker class"
         self.RosWorker = ROSWorker(self)
@@ -229,24 +230,34 @@ class GUI:
         self.KeyPressed = False
         self.SetDirection(0)
     def keyEventCallback(self, event):
-        print event.type
         if event.keysym == 'Left':
             self.SetDirection(1)
         elif event.keysym == 'Right':
             self.SetDirection(3)
         elif event.keysym == 'Up':
             self.SetDirection(2)
+        elif event.keysym == 'Down':
+            self.SetDirection(0)
 
     def SetDirection(self, directionNumber):
-        print "Setting direction, direction number = {0}".format(directionNumber)
-        if directionNumber == 0:
-            self.RosWorker.DirPub.publish(np.array([0., 0., 1.], dtype = np.float32))
-        elif directionNumber == 1:
-            self.RosWorker.DirPub.publish(np.array([10., 10., 1.], dtype = np.float32))
-        elif directionNumber == 2:
-            self.RosWorker.DirPub.publish(np.array([10., 0., 1.], dtype = np.float32))
-        elif directionNumber == 3:
-            self.RosWorker.DirPub.publish(np.array([10., -10., 1.], dtype = np.float32))
+        if self.directionNumber != directionNumber:
+            self.directionNumber = directionNumber
+            if directionNumber == 0:
+                self.RosWorker.DirPub.publish(np.array([0., 0., 1.], dtype = np.float32))
+                if self.status == 'MOVING':
+                    self.SetCommand(0)
+            elif directionNumber == 1:
+                self.RosWorker.DirPub.publish(np.array([40., 40., 1.], dtype = np.float32))
+                if self.command != 'MOVING':
+                    self.SetCommand(1)
+            elif directionNumber == 2:
+                self.RosWorker.DirPub.publish(np.array([40., 0., 1.], dtype = np.float32))
+                if self.command != 'MOVING':
+                    self.SetCommand(1)
+            elif directionNumber == 3:
+                self.RosWorker.DirPub.publish(np.array([40., -40., 1.], dtype = np.float32))
+                if self.command != 'MOVING':
+                    self.SetCommand(1)
 
 class ROSWorker():
     
@@ -259,6 +270,7 @@ class ROSWorker():
         self.lastPictureUpdate = time.time()
         rospy.init_node('GUI', anonymous=True)
         self.image_sub_right = rospy.Subscriber("/stereo/right/image_raw", Image, self.PictureCallback)
+        self.leg_contacts_subcriber = rospy.Subscriber("legs_contacts", String, self.ContactsCallback)
         self.commandSubscriber = rospy.Subscriber('command', String, self.CommandCallback)
         self.statusSubscriber = rospy.Subscriber('status', String, self.StatusCallback)
         self.positionSubscriber = rospy.Subscriber('position', numpy_msg(Floats), self.PositionCallback)
@@ -272,6 +284,15 @@ class ROSWorker():
         #rospy.spin()
         
         print "Done with ROSWorker init"
+
+    def ContactsCallback(self, contactsMessage):
+        for n_leg in range(6):
+            if contactsMessage.data.split('&')[n_leg] == 1:
+                self.WindowManager.LegsLabels[n_leg].configure(background = 'green')
+            else:
+                self.WindowManager.LegsLabels[n_leg].configure(background = 'red')
+
+
     def PictureCallback(self, data):  
         if time.time() - self.lastPictureUpdate > 0.1:
             try:
@@ -298,12 +319,14 @@ class ROSWorker():
 
     def SetH(self):
         self.HeightPub.publish(float(self.WindowManager.h.get()))
-        self.SetHeightButtonColor = 'orange'
-        if self.status != 'ERROR':
-            self.SetHeightButton.configure(background = self.SetHeightButtonColor)
+        self.WindowManager.SetHeightButtonColor = 'orange'
+        self.WindowManager.master.focus()
+        if self.WindowManager.status != 'ERROR':
+            self.WindowManager.SetHeightButton.configure(background = self.WindowManager.SetHeightButtonColor)
 
     def SetSpeed(self):
         if 0 < float(self.WindowManager.speed.get()) <=1:
+            self.WindowManager.master.focus()
             self.WindowManager.speedSet = True
             self.WindowManager.SpeedButton.configure(background = 'gray')
             self.WindowManager.SetCommand(self.WindowManager.commandDictionnary[self.WindowManager.command], True) # Fake line to easily reset command buttons colors
