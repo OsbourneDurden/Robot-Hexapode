@@ -149,6 +149,8 @@ class Robot:
                 self.absolute_feet_positions_history[-1] += [leg.absolute_feet_position]
                 self.relative_feet_positions_history[-1] += [leg.relative_feet_position]
 
+            self.Initialize()
+
             self.SaveAndPublishStatus('STOPPED')
 
         else:
@@ -157,6 +159,10 @@ class Robot:
             self.position = artefact_position
             self.orientation = artefact_orientation
             self.compute_refchanging_rob_to_abs_matrix()
+
+    def Initialize(self):
+            for n_leg in range(self.N_legs):
+                self.motor_publishers[n_leg].publish(np.array(self.Legs[n_leg].angles, dtype = np.float32))
 
     def ConcatenateAnglesAndPublish(self):
         for leg in self.Legs:
@@ -176,8 +182,8 @@ class Robot:
             print "Unable to compute DeltaTs, since self.speedRatio is 0. Waiting for speed ratio update."
 
     def UpdateContact(self, contactsMessage):
-        for n_leg in range(self.N_Legs):
-            self.Legs[n_leg].contact = bool(contactMessage.data.split('&')[n_leg])
+        for n_leg in range(self.N_legs):
+            self.Legs[n_leg].contact = bool(int(contactsMessage.data.split('&')[n_leg]))
 
     def UpdateCommand(self, commandMessage):
         self.command = commandMessage.data
@@ -497,7 +503,7 @@ class Robot:
             print "Reseting leg {0}".format(leg_id)
             leg = self.Legs[leg_id]
             cycle = 0
-            if leg.status == 'up' or np.linalg.norm(leg.relative_feet_position - np.array([leg.x_repos, leg.y_repos, -leg.h])) > tolerance:
+            if leg.contact == False or np.linalg.norm(leg.relative_feet_position - np.array([leg.x_repos, leg.y_repos, -leg.h])) > tolerance:
                 
                 last_publish = 0
                 leg.flight = tools.flight(leg.relative_feet_position, np.array([leg.x_repos, leg.y_repos, -leg.h]), leg.h_up*1.05, self.NPointsResetFlight)
@@ -593,6 +599,8 @@ class Robot:
             print ""
             print "Statuses at start of cycle {0} : {1}".format(Cycle, [leg.status for leg in self.Legs])
 
+            Cycle += 1
+
             if Cycle-CycleOffset > 10:
                 if self.Direction[2] == 1 and self.Direction[0] == 40.:
                     final_position = self.position[:2] + self.rotate_vector_to_absolute_from_robot(self.Direction)[:2]
@@ -605,9 +613,9 @@ class Robot:
                     for leg in self.Legs:
                         final_feet_positions += [leg.get_leg_absolute_position(final_robot)]
                     CycleOffset = Cycle
-            else:
-                print "Robot should move while direction is 0., 0., 1..  Weird. Going into error mode (should do something better)"
-                self.SaveAndPublishStatus('ERROR')
+                else:
+                    print "Robot should move while direction is 0., 0., 1..  Weird. Going into error mode (should do something better)"
+                    self.SaveAndPublishStatus('ERROR')
 
             # We set the different history variables for this cycle
             self.angles_history += [[]]
@@ -773,7 +781,7 @@ class Robot:
 
             while time.time() - last_cycle_time < self.DeltaTGoto:
                 time.sleep(self.DeltaTGoto/10)
-            if self.status != 'MOVING':
+            if self.status == 'MOVING':
                 self.ConcatenateAnglesAndPublish()
                 self.PublishRobotData()
                 last_publish = time.time()

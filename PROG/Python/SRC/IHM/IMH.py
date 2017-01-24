@@ -50,7 +50,7 @@ class GUI:
         self.LegsLabels = [Tkinter.Label(LegsWindow, text="  \n  {0}  \n  ".format(n_leg), bg="red", fg="white") for n_leg in range(6)]
         self.LegsStatus = []
         for n_legLabel in range(len(self.LegsLabels)):
-            self.LegStatus += [0]
+            self.LegsStatus += [0]
             self.LegsLabels[n_legLabel].grid(row = int(0+n_legLabel/3), column = n_legLabel%3)
 
         self.master.protocol("WM_DELETE_WINDOW", self.master.quit)
@@ -298,7 +298,7 @@ class ROSWorker():
 
     def ContactsCallback(self, contactsMessage):
         for n_leg in range(6):
-            self.WindowManager.LegsStatus[n_leg] = float(contactsMessage.split('&')[n_leg])
+            self.WindowManager.LegsStatus[n_leg] = float(contactsMessage.data.split('&')[n_leg])
 
     def PictureCallback(self, data):  
         if time.time() - self.lastPictureUpdate > 0.1:

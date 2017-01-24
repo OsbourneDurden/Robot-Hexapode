@@ -3,10 +3,12 @@
 #include <std_msgs/String.h> // For the leg contacts data
 #include <std_msgs/Bool.h>
 
-const int sonarFrontPin = 8;
-const int ledPin = 13;
+const int sonarFrontPin = 2;
+const int ledPin = 3;
 const int legsPins[6] = {13,12,11,10,9,8};
 char legs_string[12] = "0&0&0&0&0&0";
+
+
 
 void ledCallback(const std_msgs::Bool& ledMsg)
 {
@@ -37,6 +39,8 @@ int legs_contacts=0;
 
 void setup()
 {
+  Serial.begin(57600);
+
   nh.initNode();
   nh.advertise(pub_sonar_front);
   
@@ -91,7 +95,7 @@ void loop()
     if (digitalRead(legsPins[1]) == HIGH) {legs_string[2] = '1';}
     else {legs_string[2] = '0';}
     if (digitalRead(legsPins[2]) == HIGH) {legs_string[4] = '1';}
-    else {legs_string[6] = '0';}
+    else {legs_string[4] = '0';}
     if (digitalRead(legsPins[3]) == HIGH) {legs_string[6] = '1';}
     else {legs_string[6] = '0';}
     if (digitalRead(legsPins[4]) == HIGH) {legs_string[8] = '1';}
@@ -99,7 +103,9 @@ void loop()
     if (digitalRead(legsPins[5]) == HIGH) {legs_string[10] = '1';}
     else {legs_string[10] = '0';}
     legs_msg.data = legs_string;
+    Serial.println(legs_string);
     pub_legs.publish(&legs_msg);
+    
   }
   
   nh.spinOnce();
@@ -115,10 +121,11 @@ long microsecondsToCentimeters(long microseconds) {
 
 int calcStateLegs(){
   int i;
-  int res=0;
+  float res=0;
   for(i=0;i<6;i++){
     if (digitalRead(legsPins[i]) == HIGH){
-      res+=2^i;
+      res+=pow(2,i);
+      
     }
   }
   return res;
