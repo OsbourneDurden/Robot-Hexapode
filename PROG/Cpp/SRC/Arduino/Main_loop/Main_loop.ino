@@ -39,8 +39,7 @@ int legs_contacts=0;
 
 void setup()
 {
-  Serial.begin(57600);
-
+  digitalWrite(ledPin, LOW);
   nh.initNode();
   nh.advertise(pub_sonar_front);
   
@@ -103,7 +102,6 @@ void loop()
     if (digitalRead(legsPins[5]) == HIGH) {legs_string[10] = '1';}
     else {legs_string[10] = '0';}
     legs_msg.data = legs_string;
-    Serial.println(legs_string);
     pub_legs.publish(&legs_msg);
     
   }
