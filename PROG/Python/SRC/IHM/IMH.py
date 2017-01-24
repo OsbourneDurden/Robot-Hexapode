@@ -12,6 +12,8 @@ import ImageTk
 import cv2
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float64
+from std_msgs.msg import Float32
+from std_msgs.msg import Bool
 from std_msgs.msg import String
 from cv_bridge import CvBridge, CvBridgeError
 from rospy_tutorials.msg import Floats
@@ -31,6 +33,8 @@ class GUI:
         self.status = "Unknown"
         self.SetHeightButtonColor = 'orange'
         self.directionNumber = 0
+        self.SonarValue = 0.
+        self.Light = False
 
         self.commandDictionnary = {}
         self.commandDictionnary['STOP']=0
@@ -56,12 +60,20 @@ class GUI:
 
         self.master.protocol("WM_DELETE_WINDOW", self.master.quit)
 
+        light = Tkinter.PhotoImage(file='Icons/light.png')
+        self.ButtonLight = Tkinter.Button(self.master, width=50, height=50, image=light, bg='red')
+        self.ButtonLight.image = light
+        self.ButtonLight.grid(row = 1, column = 3, sticky='E')
+        self.ButtonLight.bind("<Button-1>", self.SwitchLight)
+
         RobotDataWindow = Tkinter.Frame(self.master, borderwidth = 2)
         RobotDataWindow.grid(row = 1, column = 4)
         self.PositionLabel = Tkinter.Label(RobotDataWindow, text = "Position : ")
         self.PositionLabel.grid(row=0, column = 0)
         self.OrientationLabel = Tkinter.Label(RobotDataWindow, text = "Orientation : ")
         self.OrientationLabel.grid(row=1, column = 0)
+        self.SonarLabel = Tkinter.Label(RobotDataWindow, text = "Sonar : ")
+        self.SonarLabel.grid(row=2, column = 0)
 
         self.PlotPlot = Figure(figsize=(5, 4), dpi=100)
         self.SubPlotPlot = self.PlotPlot.add_subplot(111)
@@ -154,15 +166,25 @@ class GUI:
         self.UpdatePosition()
         self.UpdateMap()
         self.UpdateLegs()
+        self.UpdateSonar()
     
+    def SwitchLight(self, event):
+        self.Light = bool(1-self.Light)
+        self.RosWorker.LightPub.publish(self.Light)
+        if self.Light:
+            self.ButtonLight.configure(background = 'green')
+        else:
+            self.ButtonLight.configure(background = 'red')
+
     def SetCommand(self, commandValue, from_outside = False):
         if self.speedSet:
             self.MoveButton.configure(background = 'gray')
             self.StopButton.configure(background = 'gray')
             self.SetHeightButton.configure(background = 'gray')
             self.ResetButton.configure(background = 'gray')
-            if self.command == 'ERROR':
-                print "Current command is ERROR. Filtring dangerous commands"
+            if self.status == 'ERROR' and self.command !=  'RESET':
+                None
+                #print "Current command is ERROR. Filtring dangerous commands"
             else:
                 self.SetHeightButton.configure(background = self.SetHeightButtonColor)
                 if commandValue == 0:
@@ -238,6 +260,10 @@ class GUI:
         self.PositionCanvas.show()
         #self.master.after(1000, self.UpdatePosition)
 
+    def UpdateSonar(self):
+        self.SonarLabel['text'] = "Sonar : {0} cm".format(int(self.SonarValue))
+        self.master.after(300, self.UpdateSonar)
+
     def keyReleaseCallback(self, event):
         self.KeyPressed = False
         self.SetDirection(0)
@@ -287,8 +313,10 @@ class ROSWorker():
         self.statusSubscriber = rospy.Subscriber('status', String, self.StatusCallback)
         self.positionSubscriber = rospy.Subscriber('position', numpy_msg(Floats), self.PositionCallback)
         self.orientationSubscriber = rospy.Subscriber('orientation', numpy_msg(Floats), self.OrientationCallback)
+        self.SonarSubscriber = rospy.Subscriber('sonar_front', Float32, self.SonarCallback)
         self.DirPub = rospy.Publisher("direction", numpy_msg(Floats),queue_size=1)
         self.HeightPub = rospy.Publisher("height", Float64 ,queue_size=1)
+        self.LightPub = rospy.Publisher("led", Bool ,queue_size=1)
         self.SpeedPub = rospy.Publisher("speed", Float64 ,queue_size=1)
         self.CommandPub = rospy.Publisher("command", String, queue_size=1)
 
@@ -320,10 +348,12 @@ class ROSWorker():
 
     def PositionCallback(self, data):
         self.WindowManager.position = data.data
-        print "New  Position"
 
     def OrientationCallback(self, data):
         self.WindowManager.orientation = data.data
+
+    def SonarCallback(self, data):
+        self.WindowManager.SonarValue = data.data
 
     def SetH(self):
         self.HeightPub.publish(float(self.WindowManager.h.get()))
