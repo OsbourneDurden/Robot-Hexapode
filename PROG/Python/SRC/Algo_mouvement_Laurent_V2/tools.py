@@ -121,7 +121,7 @@ def flight(I, F, h_up, n_points):
     thetamax = np.arccos(np.dot(Cstart-C, Cend-C)/R**2)
 
     L = R*thetamax
-    print "Flight computation parameters : D = {0}, R = {1}, C = {2}, thetamax = {3}, L = {4}".format(D, R, C, thetamax, L)
+    print "Flight computation parameters : D = {0}, R = {1}, C = {2}, thetamax = {3}, L = {4}, n_points = {5}".format(D, R, C, thetamax, L, n_points)
     if comp_type != "none":
         n_points_compensation = max(1,int(n_points*(height_compensation/(height_compensation + L))))
 

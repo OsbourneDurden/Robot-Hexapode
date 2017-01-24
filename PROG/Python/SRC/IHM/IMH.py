@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
 import rospy
+import numpy as np
 import matplotlib.pyplot as plt
 import Tkinter
 import time

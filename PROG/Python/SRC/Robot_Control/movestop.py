@@ -6,6 +6,7 @@ from std_msgs.msg import String
 from std_msgs.msg import Float64MultiArray
 from rospy.numpy_msg import numpy_msg
 from rospy_tutorials.msg import Floats
+import sys
 sys.path.insert(1,'/home/pi/catkin_ws/src/dynamixel_hr_ros/')
 from dxl import *
 import numpy as np

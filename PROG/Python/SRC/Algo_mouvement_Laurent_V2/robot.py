@@ -44,7 +44,7 @@ class Robot:
             self.ResetTimeOneLeg = 1. #In seconds
             self.NPointsResetFlight = 30
             self.SetHeightSpeed = 1 # In cm/s
-            self.NPointsSetHeight = 30
+            self.NPointsSetHeight = 2
             self.computeDeltasT()
         
             # RULES DEFINITIONS
@@ -542,7 +542,7 @@ class Robot:
             heights = np.linspace(self.h, self.NewHeight, self.NPointsSetHeight)
             last_publish = time.time()
 
-            for current_height in heights[:-1]:
+            for current_height in heights[1:]:
                 self.position[2] = current_height
                 if self.status != 'SETHING':
                     break

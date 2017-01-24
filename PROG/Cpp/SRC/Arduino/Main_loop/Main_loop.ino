@@ -8,11 +8,10 @@ const int ledPin = 3;
 const int legsPins[6] = {13,12,11,10,9,8};
 char legs_string[12] = "0&0&0&0&0&0";
 
-
-
 void ledCallback(const std_msgs::Bool& ledMsg)
 {
-  digitalWrite(ledPin, ledMsg.data);
+  if (ledMsg.data == true) {digitalWrite(ledPin, HIGH);}
+  else {digitalWrite(ledPin, LOW);}
 }
 
 std_msgs::Float32 sonar_front_msg;
@@ -40,6 +39,7 @@ int legs_contacts=0;
 void setup()
 {
   digitalWrite(ledPin, LOW);
+  
   nh.initNode();
   nh.advertise(pub_sonar_front);
   
