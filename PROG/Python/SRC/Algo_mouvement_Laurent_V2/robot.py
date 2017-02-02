@@ -164,10 +164,12 @@ class Robot:
     def Initialize(self):
             for n_leg in range(self.N_legs):
                 self.motor_publishers[n_leg].publish(np.array(self.Legs[n_leg].angles, dtype = np.float32))
+                time.sleep(0.07)
 
     def ConcatenateAnglesAndPublish(self):
         for leg in self.Legs:
             AnglesMessage = np.array(leg.angles, dtype = np.float32)
+            time.sleep(0.07)
             self.motor_publishers[leg.leg_id].publish(AnglesMessage)
 
     def PublishRobotData(self):

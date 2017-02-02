@@ -13,7 +13,7 @@ import cv2
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float64
 from std_msgs.msg import Float32
-from std_msgs.msg import Bool
+from std_msgs.msg import Int8
 from std_msgs.msg import String
 from cv_bridge import CvBridge, CvBridgeError
 from rospy_tutorials.msg import Floats
@@ -34,7 +34,7 @@ class GUI:
         self.SetHeightButtonColor = 'orange'
         self.directionNumber = 0
         self.SonarValue = 0.
-        self.Light = False
+        self.Light = 0
 
         self.commandDictionnary = {}
         self.commandDictionnary['STOP']=0
@@ -169,7 +169,7 @@ class GUI:
         self.UpdateSonar()
     
     def SwitchLight(self, event):
-        self.Light = bool(1-self.Light)
+        self.Light = (1-self.Light)
         self.RosWorker.LightPub.publish(self.Light)
         if self.Light:
             self.ButtonLight.configure(background = 'green')
@@ -316,7 +316,7 @@ class ROSWorker():
         self.SonarSubscriber = rospy.Subscriber('sonar_front', Float32, self.SonarCallback)
         self.DirPub = rospy.Publisher("direction", numpy_msg(Floats),queue_size=1)
         self.HeightPub = rospy.Publisher("height", Float64 ,queue_size=1)
-        self.LightPub = rospy.Publisher("led", Bool ,queue_size=1)
+        self.LightPub = rospy.Publisher("led", Int8 ,queue_size=1)
         self.SpeedPub = rospy.Publisher("speed", Float64 ,queue_size=1)
         self.CommandPub = rospy.Publisher("command", String, queue_size=1)
 
