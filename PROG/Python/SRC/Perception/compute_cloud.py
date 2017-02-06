@@ -1,23 +1,24 @@
 import numpy as np
-from scipy import ndimage
 import cv2
+import time
+from numpy import int16, mean, sort
 from rospy.numpy_msg import numpy_msg
+from std_msgs.msg import Int8
 from rospy_tutorials.msg import Floats
 import rospy
 
 class Analyser:
-    def __init__(self, calibrated = False):
+    def __init__(self, parent, calibrated = False, N_points_of_interest = 50):
+
+        self.CameraManager = parent
 
         self.RobotPosition = np.array([0., 0., 0.])
         self.RobotOrientation = np.array([1., 0., 0.])
         self.UpdateRotationMatrix()
 
-        self.3DPoints_publisher = rospy.Publisher("3D_zones".format(i), numpy_msg(Floats),queue_size=1) for i in range(self.N_legs)]
-        rospy.Subscriber('position', numpy_msg(Floats), self.UpdateRobotPosition)
-        rospy.Subscriber('orientation', numpy_msg(Floats), self.UpdateRobotOrientation)
-
         self.zones_sidelenght = 5. # In cm
 
+        self.N_points_of_interest = N_points_of_interest
         self.PointsList = []
         self.VoxelsDictionnary = {}
 
@@ -65,12 +66,38 @@ class Analyser:
             calibration_file.close()
             if self.WindowMatchSize == None or (self.WindowMatchSize/2. == int(self.WindowMatchSize/2.)):
                 print "Wrond WindowMatchSize (undefined or even number)."
+            print "Calibrated"
         else:
             print "No correct calibration file found"
 
-        rospy.init_node('analyser')
+        self.run()
+
+    def run(self):
+        #self.3DPoints_publisher = rospy.Publisher("3D_zones".format(i), numpy_msg(Floats),queue_size=1) for i in range(self.N_legs)]
+        #rospy.Subscriber('position', numpy_msg(Floats), self.UpdateRobotPosition)
+        #rospy.Subscriber('orientation', numpy_msg(Floats), self.UpdateRobotOrientation)
+        self.CameraCommandPublisher = rospy.Publisher("image_command", Int8, queue_size=1)
+        rospy.Subscriber("image_command", Int8, self.ImageCommandCallback)
+        self.PointsPublisher = rospy.Publisher('3dpoints', numpy_msg(Floats), queue_size=1)
         print "Initialization done. Running..."
-        rospy.spin()
+
+        self.AskNewPictures()
+
+    def AskNewPictures(self):
+        self.CameraManager.CameraCommandPublisher.publish(1)
+
+    def ImageCommandCallback(self, message):
+        if message.data == 3:
+            self.CameraCommandPublisher.publish(0)
+            time.sleep(0.5)
+            self.Treat()
+      
+    def Treat(self):
+        self.ImageLeft = self.CameraManager.SlaveImage
+        self.ImageRight = self.CameraManager.MasterImage
+        
+        self.ComputeImages()
+
 
     def UpdateRobotPosition(self, data):
         self.RobotPosition = angles_msg.data
@@ -237,7 +264,9 @@ class Analyser:
             CompleteMatrix = np.array(CompleteMatrix.tolist() + self.CreaM(ActualCoordinate, ImageCoordinate).tolist())
         U,s,V = np.linalg.svd(CompleteMatrix)
 
-        return np.array(V)[:,-1]
+        raw_homography = np.array(V)[:,-1]
+        print raw_homography
+        return raw_homography/raw_homography[-1]
 
     def CreaM(self, Pt1, Pt2):
         x=Pt1[0]
@@ -262,22 +291,30 @@ class Analyser:
             pointVerticalFromLeft = np.dot(self.HomographyVerticalCameraLeft, point)
             pointVerticalValue = pointVerticalFromLeft[0]/pointVerticalFromLeft[2]
 
-            neighbourhood_to_match = self.ImageLeft[point[0] - self.HWMS:point[0] + self.HWMS, point[1] - self.HWMS:point[1] + self.HWMS]
+            neighbourhood_to_match = np.array(self.ImageLeft[point[1] - self.HWMS:point[1] + self.HWMS + 1, point[0] - self.HWMS:point[0] + self.HWMS + 1], dtype = int16)
 
             epipolarLine = np.cross(np.dot(np.linalg.inv(self.HomographyHorizontalCameraRight), np.dot(self.HomographyHorizontalCameraLeft, point)),
                                     np.dot(np.linalg.inv(self.HomographyVerticalCameraRight), np.dot(self.HomographyVerticalCameraLeft, point)))
+            self.lastEpipolarLine = epipolarLine
             distances = {}
             if epipolarLine[1] != 0:
                 for x in range(self.RightWindowLimits['xmin'], self.RightWindowLimits['xmax']+1):
-                    y = int((-epipolarLine[2] - epipolarLine[0]*x)/epipolarLine[1])
-                    if self.RightWindowLimits['ymin'] <= y <= self.RightWindowLimits['ymax']:
-                        distances[x] = np.sum(abs(neighbourhood_to_match - self.ImageRight[point[0] - self.HWMS:point[0] + self.HWMS, point[1] - self.HWMS:point[1] + self.HWMS]))
+                    y_th = int((-epipolarLine[2] - epipolarLine[0]*x)/epipolarLine[1])
+                    for dy in range(-2,3):
+                        y = y_th+dy
+                        if self.RightWindowLimits['ymin'] <= y <= self.RightWindowLimits['ymax']:
+                            point = [x,y]
+                            self.neighbourhood_to_match = neighbourhood_to_match
+                            self.V = np.array(self.ImageRight[point[1] - self.HWMS:point[1] + self.HWMS + 1, point[0] - self.HWMS:point[0] + self.HWMS + 1], dtype = int16)
+                            self.point = point
+                            distances[str(x)+"&"+str(y)] = np.sum(abs(neighbourhood_to_match - np.array(self.ImageRight[point[1] - self.HWMS:point[1] + self.HWMS + 1, point[0] - self.HWMS:point[0] + self.HWMS + 1], dtype = int16)))
 
             else:
                 x = int((-epipolarLine[2])/epipolarLine[1])
                 if self.RightWindowLimits['xmin'] <= x <= self.RightWindowLimits['xmax']:
                     for y in range(self.RightWindowLimits['ymin'], self.RightWindowLimits['ymax']+1):
-                        distances[x] = np.sum(abs(neighbourhood_to_match - self.ImageRight[point[0] - self.HWMS:point[0] + self.HWMS, point[1] - self.HWMS:point[1] + self.HWMS]))
+                        point = [x,y]
+                        distances[str(x)+"&"+str(y)] = np.sum(abs(neighbourhood_to_match - np.array(self.ImageRight[point[1] - self.HWMS:point[1] + self.HWMS + 1, point[0] - self.HWMS:point[0] + self.HWMS + 1], dtype = int16)))
 
         elif origin == 'right':
             pointHorizontalFromRight = np.dot(self.HomographyHorizontalCameraRight)
@@ -290,25 +327,37 @@ class Analyser:
 
             epipolarLine = np.cross(np.dot(np.linalg.inv(self.HomographyHorizontalCameraLeft), np.dot(self.HomographyHorizontalCameraRight, point)),
                                     np.dot(np.linalg.inv(self.HomographyVerticalCameraLeft), np.dot(self.HomographyVerticalCameraRight, point)))
+            self.lastEpipolarLine = epipolarLine
             distances = {}
             if epipolarLine[1] != 0:
                 for x in range(self.LeftWindowLimits['xmin'], self.LeftWindowLimits['xmax']+1):
-                    y = int((-epipolarLine[2] - epipolarLine[0]*x)/epipolarLine[1])
-                    if self.LeftWindowLimits['ymin'] <= y <= self.LeftWindowLimits['ymax']:
-                        distances[x] = np.sum(abs(neighbourhood_to_match - self.ImageLeft[point[0] - self.HWMS:point[0] + self.HWMS, point[1] - self.HWMS:point[1] + self.HWMS]))
+                    y_th = int((-epipolarLine[2] - epipolarLine[0]*x)/epipolarLine[1])
+                    for dy in range(-2,3):
+                        y = y_th+dy
+                        if self.RightWindowLimits['ymin'] <= y <= self.RightWindowLimits['ymax']:
+                            point = [x,y]
+                            distances[str(x)+"&"+str(y)] = np.sum(abs(neighbourhood_to_match - np.array(self.ImageRight[point[1] - self.HWMS:point[1] + self.HWMS + 1, point[0] - self.HWMS:point[0] + self.HWMS + 1], dtype = int16)))
 
             else:
                 x = int((-epipolarLine[2])/epipolarLine[1])
                 if self.LeftWindowLimits['xmin'] <= x <= self.LeftWindowLimits['xmax']:
                     for y in range(self.LeftWindowLimits['ymin'], self.LeftWindowLimits['ymax']+1):
-                        distances[x] = np.sum(abs(neighbourhood_to_match - self.ImageLeft[point[0] - self.HWMS:point[0] + self.HWMS, point[1] - self.HWMS:point[1] + self.HWMS]))
+                        point = [x,y]
+                        distances[str(x)+"&"+str(y)] = np.sum(abs(neighbourhood_to_match - np.array(self.ImageRight[point[1] - self.HWMS:point[1] + self.HWMS + 1, point[0] - self.HWMS:point[0] + self.HWMS + 1], dtype = int16)))
 
-        xFinal = distances.keys()[distances.values().index(min(distances.values()))]
-        yFinal = int((-epipolarLine[2] - epipolarLine[0]*xFinal)/epipolarLine[1])
-        
-        return [xFinal, yFinal]
+        #xFinal = distances.keys()[distances.values().index(min(distances.values()))]
+        #yFinal = int((-epipolarLine[2] - epipolarLine[0]*xFinal)/epipolarLine[1])
+        if len(distances.values()) > 0:
+            FinalKey = distances.keys()[distances.values().index(min(distances.values()))]
+            xFinal = int(FinalKey.split('&')[0])
+            yFinal = int(FinalKey.split('&')[1])
+            return [xFinal, yFinal]
+        else:
+            return None
 
     def compute3DCoordinates(self, point_left, point_right):
+        if point_left == None or point_right == None:
+            return None
         point_left = np.array(point_left+[1.])
         point_right = np.array(point_right+[1.])
 
@@ -322,8 +371,9 @@ class Analyser:
         tmpPoint = np.dot(self.HomographyVerticalCameraRight, point_right)
         lineRightPointVertical = np.array([tmpPoint[0]/tmpPoint[2], tmpPoint[1]/tmpPoint[2], 0])
 
-        3DPoint_in_landmark = self.findClosestPoint([lineLeftPointHorizontal, lineLeftPointVertical], [lineRightPointHorizontal, lineRightPointVertical])
-        return self.RobotToAbsolute(self.LandmarkToRobot(3DPoint_in_landmark))
+        Point_in_landmark = self.findClosestPoint([lineLeftPointHorizontal, lineLeftPointVertical], [lineRightPointHorizontal, lineRightPointVertical])
+        #return self.RobotToAbsolute(self.LandmarkToRobot(3DPoint_in_landmark))
+        return Point_in_landmark
 
     def LandmarkToRobot(self, point):
         return point - (self.CenterCamerasPosition - self.CenterCamerasPositionRobot) 
@@ -360,20 +410,29 @@ class Analyser:
         points_to_compute = self.pointsOfInterest(origin)
 
         for original_point in points_to_compute:
-            matched_point = self.match_point(original_point, origin)
-            if origin == 'left':
-                self.PointsList += [self.compute3DCoordinates(point_left = original_point, point_right = matched_point)]
-                self.AddToVoxel(self.PointsList[-1])
-            else:
-                self.PointsList += self.compute3DCoordinates(point_left = original_point, point_right = matched_point)
+            print original_point
+            if original_point != None:
+                matched_point = self.match_point(original_point, origin)
+                if origin == 'left':
+                    point = self.compute3DCoordinates(point_left = original_point, point_right = matched_point)
+                else:
+                    point = self.compute3DCoordinates(point_left = original_point, point_right = matched_point)
+                if point != None:
+                    self.PointsList += [np.array([point[2], point[1]-1000,  point[0]], dtype=np.float32)]
+                    print PointsList[-1]
+                    self.PointsPublisher.publish(PointsList[-1])
+        self.AskNewPictures()
 
-    def pointsOfInterest(self, origin):
+    def pointsOfInterest(self, origin, n_points = None):
         ''' Function recuperation point of interest
         Input :
         - variance_threshold
         - origin
         Return a list of point (x,y)'''
         
+        if n_points == None:
+            n_points = self.N_points_of_interest
+
         if origin == 'left' :
             xmin = self.LeftWindowLimits['xmin']
             ymin = self.LeftWindowLimits['ymin']
@@ -389,13 +448,17 @@ class Analyser:
             Image = self.ImageRight        
             
         points = []
-        for x in range(xmin+self.HWMS, xmax-self.HWMS, self.WindowMatchSize) :
-            for y in range(ymin+self.HWMS, ymax-self.HWMS, self.WindowMatchSize) :
-                win = Image[x-self.HWMS : x+self.HWMS, y-self.HWMS : y+self.HWMS]
-                variance = ndimage.variance(win)
-                if variance > self.variance_threshold :
-                    points += [[x,y]]
-                    
+        variances = {}
+        for x in range(xmin+self.HWMS, xmax-self.HWMS, self.WindowMatchSize):
+            for y in range(ymin+self.HWMS, ymax-self.HWMS, self.WindowMatchSize):
+                win = np.array(Image[y-self.HWMS : y+self.HWMS + 1, x-self.HWMS : x+self.HWMS + 1], dtype = int16)
+                v = mean(win**2) - mean(win)**2
+                if v>0:
+                    variances[str(x)+'&'+str(y)] = v
+        variances_sorted = sort(variances.values())
+        for n_variance in range(n_points):
+            variance = variances_sorted[-(n_variance+1)]
+            point = variances.keys()[variances.values().index(variance)]
+            variances.pop(point)
+            points += [[int(point.split('&')[0]), int(point.split('&')[1])]]
         return points
-
-

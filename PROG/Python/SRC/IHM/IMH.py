@@ -10,6 +10,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import Image as Im
 import ImageTk
 import cv2
+from mpl_toolkits.mplot3d import Axes3D
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float64
 from std_msgs.msg import Float32
@@ -18,6 +19,7 @@ from std_msgs.msg import String
 from cv_bridge import CvBridge, CvBridgeError
 from rospy_tutorials.msg import Floats
 from rospy.numpy_msg import numpy_msg
+from PIL import Image as PILImage
 
 class GUI:
     def __init__(self, parent=None):
@@ -35,6 +37,8 @@ class GUI:
         self.directionNumber = 0
         self.SonarValue = 0.
         self.Light = 0
+        self.ImageSide = "Right"
+        self.imagecommand = 0
 
         self.commandDictionnary = {}
         self.commandDictionnary['STOP']=0
@@ -85,6 +89,12 @@ class GUI:
         self.PositionCanvas = FigureCanvasTkAgg(self.PlotPosition, master=self.master)
         self.PositionCanvas.get_tk_widget().grid(row = 4, column = 0, columnspan = 4)
         
+        CameraOptionsWindow = Tkinter.Frame(self.master, borderwidth = 2)
+        CameraOptionsWindow.grid(row = 2, column = 4)
+        self.SideButton = Tkinter.Button(CameraOptionsWindow, text = "Camera : Master", command = self.SwitchSide)
+        self.SideButton.grid(row=0, column = 0)
+        self.SaveButton = Tkinter.Button(CameraOptionsWindow, text = "Save", command = self.SavePicture)
+        self.SaveButton.grid(row=0, column = 1)
         f = Figure(figsize=(5, 4), dpi=100)
         self.SubPlotPicture = f.add_subplot(111)
         self.img = np.zeros([480,640,3])
@@ -93,8 +103,8 @@ class GUI:
         self.PictureCanvas.get_tk_widget().grid(row = 3, column = 4, columnspan = 1)
 
         self.PlotMap = Figure(figsize=(5, 4), dpi=100)
-        self.SubPlotMap = self.PlotPosition.add_subplot(111)
-        self.MapCanvas = FigureCanvasTkAgg(self.PlotPosition, master=self.master)
+        self.SubPlotMap = self.PlotMap.add_subplot(111, projection='3d')
+        self.MapCanvas = FigureCanvasTkAgg(self.PlotMap, master=self.master)
         self.MapCanvas.get_tk_widget().grid(row = 4, column = 4, columnspan = 1)
         
         DirectionWindow = Tkinter.Frame(self.master, borderwidth=2)
@@ -168,6 +178,22 @@ class GUI:
         self.UpdateLegs()
         self.UpdateSonar()
     
+    def SavePicture(self):
+
+        im = PILImage.fromarray(self.img)
+        im.save("./"+self.ImageSide+"_"+str(time.gmtime().tm_mday)+"-"+str(time.gmtime().tm_mon)+"-"+str(time.gmtime().tm_year)+"-"+str(time.gmtime().tm_hour)+":"+str(time.gmtime().tm_min)+":"+str(time.gmtime().tm_sec)+".jpeg")
+
+    def SwitchSide(self):
+        #if self.ImageSide == "Right":
+        #    self.ImageSide = "Left"
+        #else:
+        #    self.ImageSide = "Right"
+
+        #self.SideButton.configure(text = "Camera : "+self.ImageSide)
+        #self.RosWorker.image_sub.unregister()
+        #self.RosWorker.image_sub = rospy.Subscriber("/stereo/"+self.ImageSide.lower()+"/image_raw", Image, self.RosWorker.PictureCallback)
+        None
+
     def SwitchLight(self, event):
         self.Light = (1-self.Light)
         self.RosWorker.LightPub.publish(self.Light)
@@ -236,6 +262,9 @@ class GUI:
         self.master.after(50, self.UpdateLegs)
 
     def UpdatePicture(self):
+        if self.imagecommand == 0:
+            self.RosWorker.CameraCommandPublisher.publish(4)
+
         self.SubPlotPicture.clear()
         self.SubPlotPicture.imshow(self.img)
         self.PictureCanvas.show()
@@ -256,9 +285,11 @@ class GUI:
         self.master.after(100, self.UpdatePosition)
 
     def UpdateMap(self):
-        #self.SubPlotMap.plot(self.position[0], self.position[1])
-        self.PositionCanvas.show()
-        #self.master.after(1000, self.UpdatePosition)
+        for point in self.RosWorker.PointsToPlotList:
+            self.SubPlotMap.scatter(point[0], point[1], point[2])
+        self.RosWorker.PointsToPlotList = []
+        self.MapCanvas.show()
+        self.master.after(100, self.UpdateMap)
 
     def UpdateSonar(self):
         self.SonarLabel['text'] = "Sonar : {0} cm".format(int(self.SonarValue))
@@ -305,25 +336,36 @@ class ROSWorker():
         self.WindowManager = parent
         self.bridge = CvBridge()
 
+        self.PointsToPlotList = []
+
         self.lastPictureUpdate = time.time()
         rospy.init_node('GUI', anonymous=True)
-        self.image_sub_right = rospy.Subscriber("/stereo/right/image_raw", Image, self.PictureCallback)
+        self.image_sub = rospy.Subscriber("master_camera", Image, self.PictureCallback)
         self.leg_contacts_subcriber = rospy.Subscriber("legs_contacts", String, self.ContactsCallback)
         self.commandSubscriber = rospy.Subscriber('command', String, self.CommandCallback)
         self.statusSubscriber = rospy.Subscriber('status', String, self.StatusCallback)
         self.positionSubscriber = rospy.Subscriber('position', numpy_msg(Floats), self.PositionCallback)
         self.orientationSubscriber = rospy.Subscriber('orientation', numpy_msg(Floats), self.OrientationCallback)
         self.SonarSubscriber = rospy.Subscriber('sonar_front', Float32, self.SonarCallback)
+        rospy.Subscriber("image_command", Int8, self.ImageCommandCallback)
+        rospy.Subscriber('3dpoints', numpy_msg(Floats), self.UpdatePointsToPlot)
         self.DirPub = rospy.Publisher("direction", numpy_msg(Floats),queue_size=1)
         self.HeightPub = rospy.Publisher("height", Float64 ,queue_size=1)
         self.LightPub = rospy.Publisher("led", Int8 ,queue_size=1)
         self.SpeedPub = rospy.Publisher("speed", Float64 ,queue_size=1)
         self.CommandPub = rospy.Publisher("command", String, queue_size=1)
+        self.CameraCommandPublisher = rospy.Publisher("image_command", Int8, queue_size=1)
 
         
         #rospy.spin()
         
         print "Done with ROSWorker init"
+
+    def UpdatePointsToPlot(self, message):
+        self.PointsToPlotList += [message.data]
+
+    def ImageCommandCallback(self, message):
+        self.WindowManager.imagecommand = message.data
 
     def ContactsCallback(self, contactsMessage):
         for n_leg in range(6):
@@ -375,5 +417,5 @@ class ROSWorker():
 root = Tkinter.Toplevel()
 Gui_Instance = GUI(root)
 root.mainloop()
-Gui_Instance.RosWorker.image_sub_right.unregister()
+Gui_Instance.RosWorker.image_sub.unregister()
 root.destroy()
