@@ -20,6 +20,8 @@ from cv_bridge import CvBridge, CvBridgeError
 from rospy_tutorials.msg import Floats
 from rospy.numpy_msg import numpy_msg
 from PIL import Image as PILImage
+sys.path.insert(1,'/home/dardelet/Documents/SAR/Projet/Code/Robot-Hexapode/PROG/Python/SRC/Algo_mouvement_Laurent_V2/')
+import tools
 
 class GUI:
     def __init__(self, parent=None):
@@ -49,6 +51,9 @@ class GUI:
 
         self.position = np.array([0., 0., 0.])
         self.orientation = np.array([1., 0., 0.])
+        
+        self.geometry_data = tools.file_loader('/home/dardelet/Documents/SAR/Projet/Code/Robot-Hexapode/PROG/Python/SRC/Algo_mouvement_Laurent_V2/geometry.txt')
+
         self.master.title("Cornelius GUI")
 
         self.label = Tkinter.Label(self.master, text="Main commands")
@@ -80,9 +85,10 @@ class GUI:
         self.SonarLabel.grid(row=2, column = 0)
 
         self.PlotPlot = Figure(figsize=(5, 4), dpi=100)
-        self.SubPlotPlot = self.PlotPlot.add_subplot(111)
+        self.SubPlotPlot = self.PlotPlot.add_subplot(111, projection='3d')
         self.PlotCanvas = FigureCanvasTkAgg(self.PlotPlot, master=self.master)
         self.PlotCanvas.get_tk_widget().grid(row = 3, column = 0, columnspan = 4)
+        self.SubPlotPlot.mouse_init()
         
         self.PlotPosition = Figure(figsize=(5, 4), dpi=100)
         self.SubPlotPosition = self.PlotPosition.add_subplot(111)
@@ -329,6 +335,10 @@ class GUI:
                 if self.command != 'MOVING':
                     self.SetCommand(1)
 
+    def Create3DStructure(self):
+        #Create main body:
+
+
 class ROSWorker():
     
     def __init__(self, parent = None):
@@ -350,6 +360,7 @@ class ROSWorker():
         self.SonarSubscriber = rospy.Subscriber('sonar_front', Float32, self.SonarCallback)
         rospy.Subscriber("image_command", Int8, self.ImageCommandCallback)
         rospy.Subscriber('points', numpy_msg(Floats), self.UpdatePointsToPlot)
+        [rospy.Subscriber("angles_raw_leg_{0}".format(i), numpy_msg(Floats), self.UpdateAngles, i) for i in range(6)]
         self.DirPub = rospy.Publisher("direction", numpy_msg(Floats),queue_size=1)
         self.HeightPub = rospy.Publisher("height", Float32 ,queue_size=1)
         self.LightPub = rospy.Publisher("led", Int8 ,queue_size=1)
@@ -361,6 +372,9 @@ class ROSWorker():
         #rospy.spin()
         
         print "Done with ROSWorker init"
+    
+    def UpdateAngles(self, message, n_leg):
+        self.Legs[n_leg].angles = message.data
 
     def UpdatePointsToPlot(self, message):
         self.PointsToPlotList += [message.data]
