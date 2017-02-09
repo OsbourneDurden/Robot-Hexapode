@@ -3,9 +3,11 @@
 #import roslib; roslib.load_manifest("dynamixel_hr_ros")
 import rospy
 from std_msgs.msg import String
+from std_msgs.msg import Float32
 from std_msgs.msg import Float64MultiArray
 from rospy.numpy_msg import numpy_msg
 from rospy_tutorials.msg import Floats
+from dynamixel_hr_ros.msg import ChainState
 import sys
 sys.path.insert(1,'/home/pi/catkin_ws/src/dynamixel_hr_ros/')
 from dxl import *
@@ -39,15 +41,20 @@ class Robot_control:
 
         self.command = 'MOVE'
         
+        self.AnglesDict = {}
+
+        self.Delta = 1.
 	
         self.angles_off , self.direction , self.angles_check, self.legs_motors_ids = parsser('angles.txt')
         
         self.publisher_command = rospy.Publisher('command', String ,queue_size =1)
-        self.publisher_legs = rospy.Publisher("/dxl/command_position", CommandPosition)
-        self.enabler=rospy.Publisher("/dxl/enable",Bool)
+        self.publisher_legs = rospy.Publisher("/dxl/command_position", CommandPosition, queue_size=1)
+        self.enabler=rospy.Publisher("/dxl/enable",Bool, queue_size=1)
         self.enabler.publish(True)
         
         self.subscriber_command = rospy.Subscriber('command', String, self.update_cmd)
+        self.subscriber_delta = rospy.Subscriber('delta', Float32, self.UpdateDelta)
+        rospy.Subscriber("/dxl/chain_state",ChainState, self.UpdateAngles)
         [rospy.Subscriber("angles_raw_leg_{0}".format(i), numpy_msg(Floats), self.check_angles, i) for i in range(6)]
 		
         rospy.init_node('angle_ctrl')
@@ -55,7 +62,13 @@ class Robot_control:
         print "Initialization done. Running..."
         rospy.spin()
 
-		
+    def UpdateDelta(self, message):
+        self.Delta = message.data
+
+    def UpdateAngles(self, message):
+        for n_id in range(len(message.id)):
+            self.AnglesDict[message.id[n_id]] = message.angle[n_id]
+
     def legation(self, angles, angles_off, direction, angles_check):
         '''etape 1'''
         '''angles = vecteur contenant les angles calcules pour le deplacement'''		
@@ -98,5 +111,5 @@ class Robot_control:
             command=CommandPosition()
             command.id=self.legs_motors_ids[numleg]
             command.angle=angles
-            command.speed=[1]*3
-            commander.publish(command)
+            command.speed=[min(2.,max(0.1,abs(angles[n_id] - self.AnglesDict[self.legs_motors_ids[numleg][n_id]])/self.Delta)) for n_id in range(3)]
+            self.publisher_legs.publish(command)

@@ -106,6 +106,7 @@ class GUI:
         self.SubPlotMap = self.PlotMap.add_subplot(111, projection='3d')
         self.MapCanvas = FigureCanvasTkAgg(self.PlotMap, master=self.master)
         self.MapCanvas.get_tk_widget().grid(row = 4, column = 4, columnspan = 1)
+        self.SubPlotMap.mouse_init()
         
         DirectionWindow = Tkinter.Frame(self.master, borderwidth=2)
         DirectionWindow.grid(row = 5, column = 0, columnspan = 3)
@@ -268,7 +269,7 @@ class GUI:
         self.SubPlotPicture.clear()
         self.SubPlotPicture.imshow(self.img)
         self.PictureCanvas.show()
-        self.master.after(50, self.UpdatePicture)
+        self.master.after(200, self.UpdatePicture)
 
     def UpdateCommand(self):
         self.CommandLabel['text'] = "Current command : " + self.command
@@ -348,11 +349,11 @@ class ROSWorker():
         self.orientationSubscriber = rospy.Subscriber('orientation', numpy_msg(Floats), self.OrientationCallback)
         self.SonarSubscriber = rospy.Subscriber('sonar_front', Float32, self.SonarCallback)
         rospy.Subscriber("image_command", Int8, self.ImageCommandCallback)
-        rospy.Subscriber('3dpoints', numpy_msg(Floats), self.UpdatePointsToPlot)
+        rospy.Subscriber('points', numpy_msg(Floats), self.UpdatePointsToPlot)
         self.DirPub = rospy.Publisher("direction", numpy_msg(Floats),queue_size=1)
-        self.HeightPub = rospy.Publisher("height", Float64 ,queue_size=1)
+        self.HeightPub = rospy.Publisher("height", Float32 ,queue_size=1)
         self.LightPub = rospy.Publisher("led", Int8 ,queue_size=1)
-        self.SpeedPub = rospy.Publisher("speed", Float64 ,queue_size=1)
+        self.SpeedPub = rospy.Publisher("speed", Float32 ,queue_size=1)
         self.CommandPub = rospy.Publisher("command", String, queue_size=1)
         self.CameraCommandPublisher = rospy.Publisher("image_command", Int8, queue_size=1)
 

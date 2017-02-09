@@ -3,20 +3,12 @@
 #include <std_msgs/String.h> // For the leg contacts data
 #include <std_msgs/Int8.h>
 
-const int sonarFrontPin = 2;
-const int ledPin = 3;
+const int sonarFrontPin = 7;
 const int legsPins[6] = {13,12,11,10,9,8};
 char legs_string[12] = "0&0&0&0&0&0";
 
-void ledCallback(const std_msgs::Int8& ledMsg)
-{
-  if (ledMsg.data == 1) {digitalWrite(ledPin, HIGH);}
-  else {digitalWrite(ledPin, LOW);}
-}
-
 std_msgs::Float32 sonar_front_msg;
 ros::Publisher pub_sonar_front("sonar_front", &sonar_front_msg);
-ros::Subscriber<std_msgs::Int8> sub("led", &ledCallback );
 std_msgs::String legs_msg;
 
 ros::Publisher pub_legs("legs_contacts", &legs_msg);
@@ -38,7 +30,6 @@ int legs_contacts=0;
 
 void setup()
 {
-  digitalWrite(ledPin, HIGH);
   
   nh.initNode();
   nh.advertise(pub_sonar_front);
@@ -107,7 +98,7 @@ void loop()
   }
   
   nh.spinOnce();
-  if (published == 0) {delay(update_delay);}
+  delay(update_delay);
 }
 
 long microsecondsToCentimeters(long microseconds) {

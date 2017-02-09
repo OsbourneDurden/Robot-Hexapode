@@ -101,7 +101,7 @@ def flight(I, F, h_up, n_points):
         Cend = F
         height_compensation = np.abs(F[2]-I[2])
         comp_type = "first"
-    elif I[2] < F[2]:
+    elif I[2] > F[2]:
         Cstart = I
         Cend = [F[0], F[1], I[2]]
         height_compensation = np.abs(F[2]-I[2])

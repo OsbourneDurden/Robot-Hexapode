@@ -15,6 +15,7 @@ class Analyser:
         self.RobotPosition = np.array([0., 0., 0.])
         self.RobotOrientation = np.array([1., 0., 0.])
         self.UpdateRotationMatrix()
+        self.Treating = False
 
         self.zones_sidelenght = 5. # In cm
 
@@ -73,36 +74,44 @@ class Analyser:
         self.run()
 
     def run(self):
-        #self.3DPoints_publisher = rospy.Publisher("3D_zones".format(i), numpy_msg(Floats),queue_size=1) for i in range(self.N_legs)]
-        #rospy.Subscriber('position', numpy_msg(Floats), self.UpdateRobotPosition)
-        #rospy.Subscriber('orientation', numpy_msg(Floats), self.UpdateRobotOrientation)
+        rospy.Subscriber('position', numpy_msg(Floats), self.UpdateRobotPosition)
+        rospy.Subscriber('orientation', numpy_msg(Floats), self.UpdateRobotOrientation)
         self.CameraCommandPublisher = rospy.Publisher("image_command", Int8, queue_size=1)
         rospy.Subscriber("image_command", Int8, self.ImageCommandCallback)
-        self.PointsPublisher = rospy.Publisher('3dpoints', numpy_msg(Floats), queue_size=1)
+        self.PointsPublisher = rospy.Publisher('points', numpy_msg(Floats), queue_size=1)
         print "Initialization done. Running..."
 
         self.AskNewPictures()
 
     def AskNewPictures(self):
+        print "##### Asking New Picture #####"
         self.CameraManager.CameraCommandPublisher.publish(1)
 
     def ImageCommandCallback(self, message):
-        if message.data == 3:
+        if message.data == 4 and not self.Treating:
+            self.AskNewPictures()
+        elif message.data == 3:
             self.CameraCommandPublisher.publish(0)
             time.sleep(0.5)
+            print "Received Image confirmation. Starting analyse"
             self.Treat()
       
     def Treat(self):
-        self.ImageLeft = self.CameraManager.SlaveImage
-        self.ImageRight = self.CameraManager.MasterImage
-        
-        self.ComputeImages()
-
+        if not self.Treating:
+            self.Treating = True
+            self.ImageLeft = self.CameraManager.SlaveImage
+            self.ImageRight = self.CameraManager.MasterImage
+            D = 0
+            while self.ImageRight is None:
+                D += 0.05
+                print "Waiting for picture ({0}s)".format(D)
+                time.sleep(0.05)
+            self.ComputeImages()
 
     def UpdateRobotPosition(self, data):
         self.RobotPosition = angles_msg.data
 
-    def UpdateRobotPosition(self, data):
+    def UpdateRobotOrientation(self, data):
         self.RobotOrientation = angles_msg.data
         self.UpdateRotationMatrix()
 
@@ -292,29 +301,32 @@ class Analyser:
             pointVerticalValue = pointVerticalFromLeft[0]/pointVerticalFromLeft[2]
 
             neighbourhood_to_match = np.array(self.ImageLeft[point[1] - self.HWMS:point[1] + self.HWMS + 1, point[0] - self.HWMS:point[0] + self.HWMS + 1], dtype = int16)
+            if self.ImageRight is None:
+                print "ImageRight is None, no Image received from master."
+                return None
+            if neighbourhood_to_match is None:
+                print "neighbourhood_to_match is None"
+                return None
 
             epipolarLine = np.cross(np.dot(np.linalg.inv(self.HomographyHorizontalCameraRight), np.dot(self.HomographyHorizontalCameraLeft, point)),
                                     np.dot(np.linalg.inv(self.HomographyVerticalCameraRight), np.dot(self.HomographyVerticalCameraLeft, point)))
             self.lastEpipolarLine = epipolarLine
             distances = {}
             if epipolarLine[1] != 0:
-                for x in range(self.RightWindowLimits['xmin'], self.RightWindowLimits['xmax']+1):
+                for x in range(self.RightWindowLimits['xmin'], self.RightWindowLimits['xmax']+1, 2):
                     y_th = int((-epipolarLine[2] - epipolarLine[0]*x)/epipolarLine[1])
-                    for dy in range(-2,3):
+                    for dy in range(-1,2):
                         y = y_th+dy
                         if self.RightWindowLimits['ymin'] <= y <= self.RightWindowLimits['ymax']:
-                            point = [x,y]
-                            self.neighbourhood_to_match = neighbourhood_to_match
-                            self.V = np.array(self.ImageRight[point[1] - self.HWMS:point[1] + self.HWMS + 1, point[0] - self.HWMS:point[0] + self.HWMS + 1], dtype = int16)
-                            self.point = point
-                            distances[str(x)+"&"+str(y)] = np.sum(abs(neighbourhood_to_match - np.array(self.ImageRight[point[1] - self.HWMS:point[1] + self.HWMS + 1, point[0] - self.HWMS:point[0] + self.HWMS + 1], dtype = int16)))
+                            local_point = [x,y]
+                            distances[str(x)+"&"+str(y)] = np.sum(abs(neighbourhood_to_match - np.array(self.ImageRight[local_point[1] - self.HWMS:local_point[1] + self.HWMS + 1, local_point[0] - self.HWMS:local_point[0] + self.HWMS + 1], dtype = int16)))
 
             else:
                 x = int((-epipolarLine[2])/epipolarLine[1])
                 if self.RightWindowLimits['xmin'] <= x <= self.RightWindowLimits['xmax']:
                     for y in range(self.RightWindowLimits['ymin'], self.RightWindowLimits['ymax']+1):
-                        point = [x,y]
-                        distances[str(x)+"&"+str(y)] = np.sum(abs(neighbourhood_to_match - np.array(self.ImageRight[point[1] - self.HWMS:point[1] + self.HWMS + 1, point[0] - self.HWMS:point[0] + self.HWMS + 1], dtype = int16)))
+                        local_point = [x,y]
+                        distances[str(x)+"&"+str(y)] = np.sum(abs(neighbourhood_to_match - np.array(self.ImageRight[local_point[1] - self.HWMS:local_point[1] + self.HWMS + 1, local_point[0] - self.HWMS:local_point[0] + self.HWMS + 1], dtype = int16)))
 
         elif origin == 'right':
             pointHorizontalFromRight = np.dot(self.HomographyHorizontalCameraRight)
@@ -371,15 +383,26 @@ class Analyser:
         tmpPoint = np.dot(self.HomographyVerticalCameraRight, point_right)
         lineRightPointVertical = np.array([tmpPoint[0]/tmpPoint[2], tmpPoint[1]/tmpPoint[2], 0])
 
-        Point_in_landmark = self.findClosestPoint([lineLeftPointHorizontal, lineLeftPointVertical], [lineRightPointHorizontal, lineRightPointVertical])
-        #return self.RobotToAbsolute(self.LandmarkToRobot(3DPoint_in_landmark))
-        return Point_in_landmark
+        Point_in_landmark = self.CheckPoint(self.findClosestPoint([lineLeftPointHorizontal, lineLeftPointVertical], [lineRightPointHorizontal, lineRightPointVertical]))
+
+        if Point_in_landmark is not None:
+            point_3d = self.RobotToAbsolute(self.LandmarkToRobot(Point_in_landmark))
+            return point_3d
+        else:
+            return None
+
+    def CheckPoint(self, point):
+        point  = np.array([-point[2], -(point[1]-1000), point[0]])
+        if point[0] < self.CenterCamerasPosition[0]:
+            return point
+        else:
+            return None
 
     def LandmarkToRobot(self, point):
-        return point - (self.CenterCamerasPosition - self.CenterCamerasPositionRobot) 
+        return point - (self.CenterCamerasPosition - self.CenterCamerasPositionInRobot) 
 
     def RobotToAbsolute(self, point):
-        return np.dot(self.refchanging_rob_to_abs_matrix,V) + self.RobotPosition
+        return np.dot(self.refchanging_rob_to_abs_matrix,point) + self.RobotPosition
 
     def findClosestPoint(self, lineLeft, lineRight):
         PLeft = lineLeft[0]
@@ -410,17 +433,20 @@ class Analyser:
         points_to_compute = self.pointsOfInterest(origin)
 
         for original_point in points_to_compute:
-            print original_point
-            if original_point != None:
+            if original_point is not None:
+                print original_point
                 matched_point = self.match_point(original_point, origin)
                 if origin == 'left':
                     point = self.compute3DCoordinates(point_left = original_point, point_right = matched_point)
                 else:
                     point = self.compute3DCoordinates(point_left = original_point, point_right = matched_point)
-                if point != None:
-                    self.PointsList += [np.array([point[2], point[1]-1000,  point[0]], dtype=np.float32)]
-                    print PointsList[-1]
-                    self.PointsPublisher.publish(PointsList[-1])
+                print point
+                if point is not None:
+                    self.PointsList += [point]
+                    print "Publishing"
+                    self.PointsPublisher.publish(np.array(point, dtype=np.float32))
+        self.ImageRight = None
+        self.Treating = False
         self.AskNewPictures()
 
     def pointsOfInterest(self, origin, n_points = None):

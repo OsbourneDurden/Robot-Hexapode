@@ -3,6 +3,7 @@ from rospy_tutorials.msg import Floats
 import numpy as np
 from rospy.numpy_msg import numpy_msg
 from std_msgs.msg import Float64
+from std_msgs.msg import Float32
 from std_msgs.msg import String
 import rospy
 import tools
@@ -27,13 +28,14 @@ class Robot:
             self.NewHeight = self.h
 
             self.motor_publishers = [rospy.Publisher("angles_raw_leg_{0}".format(i), numpy_msg(Floats),queue_size=1) for i in range(self.N_legs)]
+            self.delta_publisher = rospy.Publisher("delta", Float32 ,queue_size=1)
             self.position_publisher = rospy.Publisher("position", numpy_msg(Floats),queue_size=1)
             self.orientation_publisher = rospy.Publisher("orientation", numpy_msg(Floats),queue_size=1)
             self.command_publisher = rospy.Publisher("command", String, queue_size=1)
             self.status_publisher = rospy.Publisher("status", String, queue_size=1)
             rospy.Subscriber("command", String, self.UpdateCommand)
-            rospy.Subscriber("speed", Float64, self.UpdateSpeed)
-            rospy.Subscriber("height", Float64, self.UpdateHeight)
+            rospy.Subscriber("speed", Float32, self.UpdateSpeed)
+            rospy.Subscriber("height", Float32, self.UpdateHeight)
             rospy.Subscriber("direction", numpy_msg(Floats), self.UpdateDirection)
             rospy.Subscriber("legs_contacts", String, self.UpdateContact)
             rospy.init_node('moving_algo', anonymous=True)
@@ -452,7 +454,6 @@ class Robot:
 
     def compute_move_data(self, final_position, final_orientation, N_points):
         if final_orientation == None:
-            final_position = np.array(final_position + [self.position[2]])
             final_orientation = final_position-self.position[:2]
             final_orientation /= norm(final_orientation)
 
@@ -488,6 +489,7 @@ class Robot:
 
     def ResetLegsPositions(self, forSetHeight = False):
         '''Function to reset the legs to their original state'''
+        self.delta_publisher.publish(self.DeltaTReset)
         order_th = [0,4,2,3,1,5]
         print "Starting Reset"
 
@@ -544,6 +546,7 @@ class Robot:
 
     def SetRobotHeight(self):
         initial_time = time.time()
+        self.delta_publisher.publish(self.DeltaTSetHeight)
         print "Setting height from {0} to {1}".format(self.h, self.NewHeight)
         if self.NewHeight != self.h:
             heights = np.linspace(self.h, self.NewHeight, self.NPointsSetHeight)
@@ -577,7 +580,7 @@ class Robot:
         '''Function that handles the whole movement of the robot.'''
         if self.Direction.tolist() == [0., 0., 1.]:
             print "Relative direction command is NULL. Not moving"
-            self.SaveAndPublishStatus('STOPPED')
+            #self.SaveAndPublishStatus('STOPPED')
         elif self.Direction[2] == 1. and self.Direction[0] == 40.:
             self.GoTo(self.position[:2] + self.rotate_vector_to_absolute_from_robot(self.Direction)[:2])
 
@@ -590,11 +593,13 @@ class Robot:
         '''
         CycleOffset = 0
         Cycle = 0
+        self.last_takeoff = -self.taxiway_delay_cycles
         N_points = int(np.linalg.norm(np.array(final_position)-np.array(self.position)[:-1])*self.N_points_by_cm)
-        
+        self.delta_publisher.publish(self.DeltaTGoto)
         print "Starting move with final_position {0}".format(final_position)
 
         positions, orientations = self.compute_move_data(final_position, None, N_points)
+        print positions
 
         final_feet_positions =[]
         final_robot = Robot(artefact=True, artefact_position = positions[:,-1], artefact_orientation = orientations[:,-1])
@@ -612,6 +617,7 @@ class Robot:
             if Cycle-CycleOffset > 10:
                 if self.status != 'ERROR':
                     if self.Direction[2] == 1 and self.Direction[0] == 40.:
+                        print "Updating direction informations"
                         final_position = self.position[:2] + self.rotate_vector_to_absolute_from_robot(self.Direction)[:2]
                         N_points = int(np.linalg.norm(np.array(final_position)-np.array(self.position)[:-1])*self.N_points_by_cm)
                         
