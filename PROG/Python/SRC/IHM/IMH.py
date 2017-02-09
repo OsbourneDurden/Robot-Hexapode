@@ -51,7 +51,8 @@ class GUI:
 
         self.position = np.array([0., 0., 0.])
         self.orientation = np.array([1., 0., 0.])
-        
+        self.LegsAngles = [np.array([0., 0., 0.]) for i in range(6)]
+
         self.geometry_data = tools.file_loader('/home/dardelet/Documents/SAR/Projet/Code/Robot-Hexapode/PROG/Python/SRC/Algo_mouvement_Laurent_V2/geometry.txt')
 
         self.master.title("Cornelius GUI")
@@ -177,7 +178,7 @@ class GUI:
         #self.RosProcess = Process(target = self.RosWorker.run(),  args=())
 
         self.N = 1
-        self.UpdatePlot()
+        self.UpdateStructure()
         self.UpdatePicture()
         self.UpdateRobotData()
         self.UpdatePosition()
@@ -246,14 +247,14 @@ class GUI:
                 if self.command == 'SETH':
                     self.SetHeightButtonColor = 'gray'
 
-    def UpdatePlot(self):
-        t = arange(0.0, 3.0, 0.01)
-        s = sin(self.N*2*pi*t)
-
+    def UpdateStructure(self):
         self.SubPlotPlot.clear()
-        self.SubPlotPlot.plot(t, s)
+        self.Create3DStructure()
+        self.SubPlotPlot.set_xlim(-30, 30)
+        self.SubPlotPlot.set_ylim(-30, 30)
+        self.SubPlotPlot.set_zlim(-2, 20)
         self.PlotCanvas.show()
-        self.N +=0.5
+        self.master.after(200, self.UpdateStructure)
         
     def UpdateRobotData(self):
         self.PositionLabel['text'] = "Position : X = {0:.2}, Y = {1:.2}, Z = {2:.2}".format(self.position[0], self.position[1], self.position[2])
@@ -337,7 +338,34 @@ class GUI:
 
     def Create3DStructure(self):
         #Create main body:
-
+        for n_leg in range(6):
+            self.SubPlotPlot.plot([float(self.geometry_data['LEGS_FIX_POSITIONS'][n_leg].split('=')[0]), float(self.geometry_data['LEGS_FIX_POSITIONS'][((n_leg+1)%6)].split('=')[0])],
+                                  [float(self.geometry_data['LEGS_FIX_POSITIONS'][n_leg].split('=')[1]), float(self.geometry_data['LEGS_FIX_POSITIONS'][((n_leg+1)%6)].split('=')[1])],
+                                  [self.position[2], self.position[2]], 'r')
+        # Create legs
+        for n_leg in range(6):
+            prev_point = [float(coordinate) for coordinate in self.geometry_data['LEGS_FIX_POSITIONS'][n_leg].split('=')[:2]] + [self.position[2]]
+            next_point = [prev_point[0] + float(self.geometry_data['L1']) * np.cos(float(self.geometry_data['LEGS_FIX_ANGLES'][n_leg]) + self.LegsAngles[n_leg][0]),
+                          prev_point[1] + float(self.geometry_data['L1']) * np.sin(float(self.geometry_data['LEGS_FIX_ANGLES'][n_leg]) + self.LegsAngles[n_leg][0]),
+                          prev_point[2]]
+            self.SubPlotPlot.plot([prev_point[0], next_point[0]],
+                                  [prev_point[1], next_point[1]],
+                                  [prev_point[2], next_point[2]], 'g')
+            prev_point = np.copy(next_point).tolist()
+            next_point = [prev_point[0] + float(self.geometry_data['L2'])*np.cos(float(self.geometry_data['LEGS_FIX_ANGLES'][n_leg]) + self.LegsAngles[n_leg][0])*np.cos(self.LegsAngles[n_leg][1]),
+                         prev_point[1] + float(self.geometry_data['L2'])*np.sin(float(self.geometry_data['LEGS_FIX_ANGLES'][n_leg]) + self.LegsAngles[n_leg][0])*np.cos(self.LegsAngles[n_leg][1]),
+                         prev_point[2] - float(self.geometry_data['L2'])*np.sin(self.LegsAngles[n_leg][1])]
+            self.SubPlotPlot.plot([prev_point[0], next_point[0]], 
+                                  [prev_point[1], next_point[1]],
+                                  [prev_point[2], next_point[2]], 'r')
+            prev_point = np.copy(next_point).tolist()
+            next_point = [prev_point[0] + float(self.geometry_data['L3'])*np.cos(float(self.geometry_data['LEGS_FIX_ANGLES'][n_leg]) + self.LegsAngles[n_leg][0])*np.cos(self.LegsAngles[n_leg][2]),
+                         prev_point[1] + float(self.geometry_data['L3'])*np.sin(float(self.geometry_data['LEGS_FIX_ANGLES'][n_leg]) + self.LegsAngles[n_leg][0])*np.cos(self.LegsAngles[n_leg][2]),
+                         prev_point[2] - float(self.geometry_data['L3'])*np.sin(self.LegsAngles[n_leg][2])]
+            self.SubPlotPlot.plot([prev_point[0], next_point[0]], 
+                                  [prev_point[1], next_point[1]],
+                                  [prev_point[2], next_point[2]], 'g')
+                                   
 
 class ROSWorker():
     
@@ -374,7 +402,7 @@ class ROSWorker():
         print "Done with ROSWorker init"
     
     def UpdateAngles(self, message, n_leg):
-        self.Legs[n_leg].angles = message.data
+        self.WindowManager.LegsAngles[n_leg] = message.data
 
     def UpdatePointsToPlot(self, message):
         self.PointsToPlotList += [message.data]

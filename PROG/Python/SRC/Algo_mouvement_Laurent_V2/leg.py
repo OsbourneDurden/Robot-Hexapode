@@ -399,7 +399,7 @@ class Leg:
             I_point = tools.intersect(final_line, ['L', np.array([0., 0.]), np.array([final_orientation[1], -final_orientation[0]])])[0]
             aimed_point = (1-self.frm) * I_point + self.frm * final_feet_point
             for entity in entities:
-                print "Intersecting {0} and {1} for leg {2}".format(final_line, entity, self.leg_id)
+                print "Intersecting {0} and {1} for leg {2}".format(['S', self.relative_feet_position[0:2], aimed_point], entity, self.leg_id)
                 intersections_tmp = [[tools.intersect(['S', self.relative_feet_position[0:2], aimed_point], entity), entity[0]]]
                 for intersection_tmp in intersections_tmp:
                     if len(intersection_tmp[0])==0:
@@ -407,8 +407,11 @@ class Leg:
                     else:
                         print "Tmp intersection found : {0}".format(intersection_tmp)
                         for intersection in intersection_tmp[0]:
-                            if intersection_tmp[1] == 'S' or (zone_limits[2] <= np.arctan(intersection[0]/-intersection[1]) <= zone_limits[3] and intersection[1] < 0):
+                            if intersection_tmp[1] == 'S' or (zone_limits[2] <= np.arctan(intersection[1]/-intersection[0]) <= zone_limits[3] and intersection[0] > 0):
+                                print "Accepted"
                                 intersections += [intersection]
+                            else:
+                                print "Rejected"
             if len(intersections) == 0:
                 print "Failed to find an intersection point with frm value"
                 return None
@@ -416,5 +419,5 @@ class Leg:
                 print "Found more than one intersection with frm value, abnormal : {0}".format(intersections)
                 return None
             else:
-                print "Intends to land in {0}".format(intersections[0])
-                return intersections[0]
+                print "Intends to land in {0}".format(intersections[0].tolist() + [-self.h])
+                return np.array(intersections[0].tolist() + [-self.h])

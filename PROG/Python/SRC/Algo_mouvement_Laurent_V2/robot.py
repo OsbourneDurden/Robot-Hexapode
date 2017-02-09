@@ -171,7 +171,7 @@ class Robot:
     def ConcatenateAnglesAndPublish(self):
         for leg in self.Legs:
             AnglesMessage = np.array(leg.angles, dtype = np.float32)
-            time.sleep(0.07)
+            time.sleep(0.01)
             self.motor_publishers[leg.leg_id].publish(AnglesMessage)
 
     def PublishRobotData(self):
@@ -537,6 +537,7 @@ class Robot:
                     last_publish = time.time()
                     leg.check_landing(cycle)
             print "Reset for leg {0} ended at cycle {1}".format(leg_id, cycle)
+        self.PublishRobotData()
         if forSetHeight:
             self.SetRobotHeight()
         
