@@ -211,11 +211,14 @@ class GUI:
             self.ButtonLight.configure(background = 'red')
 
     def SetCommand(self, commandValue, from_outside = False):
+        print "SetCommand function called, with commandValue {0} and from_outside {1}".format(commandValue, from_outside)
+        print commandValue == 2
         if self.speedSet:
             self.MoveButton.configure(background = 'gray')
             self.StopButton.configure(background = 'gray')
             self.SetHeightButton.configure(background = 'gray')
             self.ResetButton.configure(background = 'gray')
+
             if self.status == 'ERROR' and self.command !=  'RESET':
                 None
                 #print "Current command is ERROR. Filtring dangerous commands"
@@ -242,10 +245,11 @@ class GUI:
                     self.MoveButton.configure(background = 'red')
                     self.StopButton.configure(background = 'red')
                     
-            if not from_outside:
-                self.RosWorker.CommandPub.publish(self.command)
-                if self.command == 'SETH':
-                    self.SetHeightButtonColor = 'gray'
+                if not from_outside:
+                    print "Publishing current command : {0}".format(self.command)
+                    self.RosWorker.CommandPub.publish(self.command)
+                    if self.command == 'SETH':
+                        self.SetHeightButtonColor = 'gray'
 
     def UpdateStructure(self):
         self.SubPlotPlot.clear()
@@ -280,7 +284,7 @@ class GUI:
 
     def UpdateCommand(self):
         self.CommandLabel['text'] = "Current command : " + self.command
-        self.SetCommand(self.commandDictionnary[self.command], from_outside=True)
+        #self.SetCommand(self.commandDictionnary[self.command], from_outside=True)
         self.master.after(50,  self.UpdateCommand)
 
     def UpdateStatus(self):

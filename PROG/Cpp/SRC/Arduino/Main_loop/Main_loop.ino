@@ -6,6 +6,7 @@
 const int sonarFrontPin = 7;
 const int legsPins[6] = {13,12,11,10,9,8};
 char legs_string[12] = "0&0&0&0&0&0";
+//char ping_string[5] = "ping";
 
 std_msgs::Float32 sonar_front_msg;
 ros::Publisher pub_sonar_front("sonar_front", &sonar_front_msg);
@@ -49,8 +50,11 @@ void loop()
   nh.spinOnce();
   published = 0;
   
+  //legs_msg.data = ping_string;
+  //pub_legs.publish(&legs_msg);
+  
   // Taking care of sonars
-  if ((millis() - last_publish_sonars) > update_sonars_timeconstant_ms )
+  if (((millis() - last_publish_sonars) > update_sonars_timeconstant_ms) && false)
   {
     published = 1;
     // establish variables for duration of the ping,

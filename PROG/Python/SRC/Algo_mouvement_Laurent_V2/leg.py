@@ -260,7 +260,7 @@ class Leg:
         '''
         In case of an abnormaly long flight (i.e a hole where the leg should land), extends the flight by simply repeating the last vertical variation
         '''
-        self.relative_feet_position += np.array([0., 0., (self.flight[-1][2]-self.flight[-2][2])])
+        self.relative_feet_position += np.array([0., 0., (self.flight[-1][2]-self.flight[-2][2])/15])
         self.update_angles_from_position()
     
     def follow_flight(self, cycle):

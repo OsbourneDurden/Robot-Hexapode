@@ -10,7 +10,7 @@ import tools
 import time
 
 class Robot:
-    def __init__(self, debug = False, minimum_legs_down = 4, taxiway_delay_cycles = 8, max_sameside_leg_number = 4, alpha_margin_sameside = np.pi/40, frm = 0.1, srud =30., udhr = 0.1, artefact=False, artefact_position = None, artefact_orientation = None):
+    def __init__(self, debug = False, minimum_legs_down = 4, taxiway_delay_cycles = 8, max_sameside_leg_number = 4, alpha_margin_sameside = np.pi/40, frm = 0.1, srud =30., udhr = 0.1, leg_contact_wait_cycles = 1, artefact=False, artefact_position = None, artefact_orientation = None):
         if not artefact:
             geometry_data = tools.file_loader('geometry.txt')
 
@@ -42,12 +42,13 @@ class Robot:
             self.r = rospy.Rate(1)
 
             self.speed = float(geometry_data['SPEED']) # In cm/s
-            self.N_points_by_cm = 30
+            self.N_points_by_cm = 50
             self.ResetTimeOneLeg = 1. #In seconds
             self.NPointsResetFlight = 30
             self.SetHeightSpeed = 1 # In cm/s
             self.NPointsSetHeight = 2
-            self.MeanAlphaMove = 0.015 # Gives an estimate of the speed of the robot at this timestep. Allows to create previsions for a flight.
+            #self.MeanAlphaMove = 0.015 # Gives an estimate of the speed of the robot at this timestep. Allows to create previsions for a flight.
+            self.MeanAlphaMove = 0.007 # Gives an estimate of the speed of the robot at this timestep. Allows to create previsions for a flight.
             self.computeDeltasT()
         
             # RULES DEFINITIONS
@@ -91,6 +92,7 @@ class Robot:
             # It will be mostly constrained by physical capacities of actuators
             self.udhr = udhr # Up/Down Height Ratio. Height to which each leg has to be lifted when not grounded compared to the height of the robot. 
             # Should be interfaced with trajectories generation.
+            self.leg_contact_wait_cycles = leg_contact_wait_cycles
             
             colors = ['r', 'b', 'y', 'm', 'g', 'c'] # Set of color for display
             
@@ -152,6 +154,8 @@ class Robot:
                 self.absolute_feet_positions_history[-1] += [leg.absolute_feet_position]
                 self.relative_feet_positions_history[-1] += [leg.relative_feet_position]
 
+            #self.SaveAndPublishCommand('RESET')
+            #self.SaveAndPublishStatus('SETHING')
             self.Initialize()
 
             self.SaveAndPublishStatus('STOPPED')
@@ -171,7 +175,7 @@ class Robot:
     def ConcatenateAnglesAndPublish(self):
         for leg in self.Legs:
             AnglesMessage = np.array(leg.angles, dtype = np.float32)
-            time.sleep(0.01)
+            time.sleep(0.002)
             self.motor_publishers[leg.leg_id].publish(AnglesMessage)
 
     def PublishRobotData(self):
@@ -215,7 +219,7 @@ class Robot:
             elif current_status == 'ERROR':
                 print "Current status is 'ERROR'. Try reset first. Ignoring order"
                 self.NextAction = None
-                self.SaveAndPublishCommand('ERROR')
+                #self.SaveAndPublishCommand('ERROR')
 
             elif current_status == 'CLOSING':
                 print "Can't stop a CLOSING status midterm. Ignoring order"
@@ -256,7 +260,7 @@ class Robot:
             elif current_status == 'SETHING':
                 print "Currently setting height, should already have reset legs. Ignoring order."
                 self.NextAction = None
-                self.SaveAndPublishCommand('SETH')
+                #self.SaveAndPublishCommand('SETH')
 
             else:
                 print "Unknown combination of command/status : {0}/{1}".format(self.command, current_status)
@@ -270,7 +274,7 @@ class Robot:
             elif current_status == 'ERROR':
                 print "Current status is 'ERROR'. Try reset first. Ignoring order"
                 self.NextAction = None
-                self.SaveAndPublishCommand('ERROR')
+                #self.SaveAndPublishCommand('ERROR')
 
             elif current_status == 'CLOSING':
                 print "Added Set Height at the end of current 'CLOSING' action"
@@ -300,7 +304,7 @@ class Robot:
             elif current_status == 'ERROR':
                 print "Dangerous to restart while currently in ERROR. Try reset first. Ignoring order."
                 self.NextAction = None
-                self.SaveAndPublishCommand('ERROR')
+                #self.SaveAndPublishCommand('ERROR')
         
             elif current_status == 'CLOSING' or current_status == 'RESETING' or current_status == 'SETHING':
                 print "Added Move at  the end of current action"
@@ -317,7 +321,7 @@ class Robot:
 
         else:
             print "Unknown command. VERY weird (from Robot class). For safety, passing in 'ERROR' status"
-            self.SaveAndPublishCommand('ERROR')
+            self.SaveAndPublishStatus('ERROR')
 
 
     def UpdateHeight(self, heightMessage):
@@ -412,12 +416,12 @@ class Robot:
                         leg.follow_flight(cycle_end)
                         if leg.angles == None:
                             print "Leg {0} angles are None. (2514453)".format(leg.leg_id)
-                            self.SaveAndPublishCommand('ERROR')
+                            self.SaveAndPublishStatus('ERROR')
                     else:
                         leg.extend_flight()
                         if leg.angles == None:
                             print "Leg {0} angles are None. (8754215)".format(leg.leg_id)
-                            self.SaveAndPublishCommand('ERROR')
+                            self.SaveAndPublishStatus('ERROR')
                     
                     leg.absolute_feet_position = leg.get_leg_absolute_position(self)
                     print "New absolute position of leg {0} : {1}".format(leg.leg_id,  leg.absolute_feet_position)
@@ -524,13 +528,14 @@ class Robot:
                         leg.follow_flight(cycle)
                         if leg.angles == None:
                             print "Leg {0} angles are None. (4754126)".format(leg.leg_id)
-                            self.SaveAndPublishCommand('ERROR')
+                            self.SaveAndPublishStatus('ERROR')
                         AnglesMessage = np.array(leg.angles, dtype = np.float32)
                     else:
                         leg.extend_flight()
                         if leg.angles == None:
                             print "Leg {0} angles are None. (7548754)".format(leg.leg_id)
-                            self.SaveAndPublishCommand('ERROR')
+                            self.SaveAndPublishStatus('ERROR')
+                    leg.absolute_feet_position = leg.get_leg_absolute_position(self)
                     while time.time()-last_publish < self.DeltaTReset:
                         time.sleep(self.DeltaTReset/10)
                     self.motor_publishers[leg.leg_id].publish(AnglesMessage)
@@ -559,10 +564,11 @@ class Robot:
                     break
                 for leg in self.Legs:
                     leg.set_height(current_height)
+                    leg.absolute_feet_position = leg.get_leg_absolute_position(self)
                     leg.update_angles_from_position()
                     if leg.angles == None:
                         print "Leg {0} angles are None. (5465546)".format(leg.leg_id)
-                        self.SaveAndPublishCommand('ERROR')
+                        self.SaveAndPublishStatus('ERROR')
 
                 while time.time()-last_publish < abs(self.NewHeight - self.h)*self.DeltaTSetHeight:
                     time.sleep(self.DeltaTSetHeight/10)
@@ -676,22 +682,25 @@ class Robot:
                         demands += [2]
                     elif leg_zones['critical'] == False:
                         print "Leg {0} passed critical boundary !".format(leg.leg_id)
-                        self.SaveAndPublishCommand('ERROR')
+                        self.SaveAndPublishStatus('ERROR')
                     else:
                         print "Unknown leg_zones status. Probable definition issue"
-                        self.SaveAndPublishCommand('ERROR')
+                        self.SaveAndPublishStatus('ERROR')
                 
                 elif leg.status == 'up': # If the leg is currently moving in the air, towards a designed position.
                     if (Cycle - leg.cycle_takeoff) <= len(leg.flight)-1:
                         leg.follow_flight(Cycle)
                         if leg.angles == None:
                             print "Leg {0} angles are None. (7539129)".format(leg.leg_id)
-                            self.SaveAndPublishCommand('ERROR')
+                            self.SaveAndPublishStatus('ERROR')
+                    elif len(leg.flight)-1 <(Cycle - leg.cycle_takeoff) <=len(leg.flight) -1 + self.leg_contact_wait_cycles:
+                        print "Waiting for contact confirmation for leg {0}".format(leg.leg_id)
+
                     else:
                         leg.extend_flight()
                         if leg.angles == None:
                             print "Leg {0} angles are None. (0215423)".format(leg.leg_id)
-                            self.SaveAndPublishCommand('ERROR')
+                            self.SaveAndPublishStatus('ERROR')
                     
                     leg.absolute_feet_position = leg.get_leg_absolute_position(self)
                     print "New absolute position of leg {0} : {1}".format(leg.leg_id,  leg.absolute_feet_position)
@@ -699,16 +708,17 @@ class Robot:
                     self.absolute_feet_positions_history[-1] += [leg.absolute_feet_position]
                     self.relative_feet_positions_history[-1] += [leg.relative_feet_position]
                     self.angles_history[-1] += [leg.angles] 
-                    if self.debug:
-                        leg.check_landing(Cycle)
-                    else:
-                        leg.check_landing()
+                    if (Cycle - leg.cycle_takeoff) > len(leg.flight)/2:
+                        if self.debug:
+                            leg.check_landing(Cycle)
+                        else:
+                            leg.check_landing()
 
                     demands += [0]
 
                 else:
                     print "Unknown status for leg {0} : {1}".format(leg.leg_id, leg.status)
-                    self.SaveAndPublishCommand('ERROR')
+                    self.SaveAndPublishStatus('ERROR')
 
             # Now, all legs positions have been updated. We now check the demands of each leg, and update the statuses
             print "{0} legs are on the ground after update of cycle {1}".format(legs_down, Cycle)
@@ -738,7 +748,7 @@ class Robot:
                 elif  (np.array(R.angles_history[0])[:,0] > 0).sum() > self.max_sameside_leg_number:
                     # and they are too many legs on the same positive side, meaning we moved forward too many of them !
                     print "Algorithmic error, too many legs moved forward, can't keep up with the rules !"
-                    self.SaveAndPublishCommand('ERROR')
+                    self.SaveAndPublishStatus('ERROR')
             print "Finals demands for cycle {1} are {0}".format(demands, Cycle)
                         
             if sum(demands)>0:

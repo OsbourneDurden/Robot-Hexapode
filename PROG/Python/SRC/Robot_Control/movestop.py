@@ -3,16 +3,19 @@
 #import roslib; roslib.load_manifest("dynamixel_hr_ros")
 import rospy
 from std_msgs.msg import String
+from std_msgs.msg import Bool
+from std_msgs.msg import Int8
 from std_msgs.msg import Float32
 from std_msgs.msg import Float64MultiArray
 from rospy.numpy_msg import numpy_msg
 from rospy_tutorials.msg import Floats
-from dynamixel_hr_ros.msg import ChainState
+from dynamixel_hr_ros.msg import ChainState, CommandPosition
 import sys
 sys.path.insert(1,'/home/pi/catkin_ws/src/dynamixel_hr_ros/')
 from dxl import *
 import numpy as np
 import re
+import RPi.GPIO as RG
         
 def parsser(output):
 	data_file = open(output,'r')
@@ -39,28 +42,37 @@ class Robot_control:
     
     def __init__(self):
 
-        self.command = 'MOVE'
-        
+        self.status = 'STOPPED'
+        RG.setmode(RG.BCM)
+        RG.setup(14, RG.OUT)
         self.AnglesDict = {}
 
         self.Delta = 1.
 	
-        self.angles_off , self.direction , self.angles_check, self.legs_motors_ids = parsser('angles.txt')
+        self.angles_off , self.direction , self.angles_check, self.legs_motors_ids = parsser('/home/pi/Robot_Control/angles.txt')
         
-        self.publisher_command = rospy.Publisher('command', String ,queue_size =1)
-        self.publisher_legs = rospy.Publisher("/dxl/command_position", CommandPosition, queue_size=1)
-        self.enabler=rospy.Publisher("/dxl/enable",Bool, queue_size=1)
+        rospy.init_node('angle_ctrl')
+
+        self.publisher_status = rospy.Publisher('status', String ,queue_size =1)
+        self.publisher_legs = rospy.Publisher("/dxl/command_position", CommandPosition,queue_size =1)
+        self.enabler=rospy.Publisher("/dxl/enable",Bool,queue_size =1)
         self.enabler.publish(True)
         
-        self.subscriber_command = rospy.Subscriber('command', String, self.update_cmd)
+        self.subscriber_status = rospy.Subscriber('status', String, self.update_status)
+        self.subscriber_status = rospy.Subscriber('led', Int8, self.SwitchLight)
         self.subscriber_delta = rospy.Subscriber('delta', Float32, self.UpdateDelta)
         rospy.Subscriber("/dxl/chain_state",ChainState, self.UpdateAngles)
         [rospy.Subscriber("angles_raw_leg_{0}".format(i), numpy_msg(Floats), self.check_angles, i) for i in range(6)]
 		
-        rospy.init_node('angle_ctrl')
 
         print "Initialization done. Running..."
         rospy.spin()
+
+    def SwitchLight(self, message):
+        if message.data == 1:
+            RG.output(14, RG.HIGH)
+        else:
+            RG.output(14, RG.LOW)
 
     def UpdateDelta(self, message):
         self.Delta = message.data
@@ -89,14 +101,14 @@ class Robot_control:
         angles_check = np.copy(angles_check)
         if  ( (angles_check[:3]>angles).any() ) or ( (angles_check[3:]<angles).any() ):
             '''stop'''
-            self.command = 'ERROR'
-            self.publisher_command.publish('ERROR')
+            self.status = 'status'
+            self.publisher_status.publish('ERROR')
             ''' de base vaut 0'''        
         return angles
 		
-    def update_cmd(self, command):
-        print "Command updated to {0}".format(command)
-        self.command = command.data
+    def update_status(self, status):
+        print "Status updated to {0}".format(status)
+        self.status = status.data
 
     def check_angles(self, angles_msg, numleg):
         '''Extraction donnees fonction de la patte commandee'''
@@ -107,9 +119,11 @@ class Robot_control:
         
         angles = self.legation(angles_msg.data, ang_off, direction, ang_check)
 		
-        if self.command != 'ERROR' or self.command != 'STOP':
+        if self.status != 'ERROR' or self.status != 'STOP':
             command=CommandPosition()
             command.id=self.legs_motors_ids[numleg]
             command.angle=angles
             command.speed=[min(2.,max(0.1,abs(angles[n_id] - self.AnglesDict[self.legs_motors_ids[numleg][n_id]])/self.Delta)) for n_id in range(3)]
             self.publisher_legs.publish(command)
+
+R = Robot_control()
