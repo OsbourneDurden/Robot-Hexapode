@@ -10,7 +10,7 @@ import tools
 import time
 
 class Robot:
-    def __init__(self, debug = False, minimum_legs_down = 4, taxiway_delay_cycles = 8, max_sameside_leg_number = 4, alpha_margin_sameside = np.pi/40, frm = 0.1, srud =30., udhr = 0.1, leg_contact_wait_cycles = 1, artefact=False, artefact_position = None, artefact_orientation = None):
+    def __init__(self, debug = False, minimum_legs_down = 4, taxiway_delay_cycles = 8, max_sameside_leg_number = 4, alpha_margin_sameside = np.pi/40, frm = 0.1, srud =30., up_initial_value = 2., udhr = 0.1, leg_contact_wait_cycles = 1, artefact=False, artefact_position = None, artefact_orientation = None):
         if not artefact:
             geometry_data = tools.file_loader('geometry.txt')
 
@@ -42,7 +42,7 @@ class Robot:
             self.r = rospy.Rate(1)
 
             self.speed = float(geometry_data['SPEED']) # In cm/s
-            self.N_points_by_cm = 50
+            self.N_points_by_cm = 20
             self.ResetTimeOneLeg = 1. #In seconds
             self.NPointsResetFlight = 30
             self.SetHeightSpeed = 1 # In cm/s
@@ -93,6 +93,7 @@ class Robot:
             self.udhr = udhr # Up/Down Height Ratio. Height to which each leg has to be lifted when not grounded compared to the height of the robot. 
             # Should be interfaced with trajectories generation.
             self.leg_contact_wait_cycles = leg_contact_wait_cycles
+            self.up_initial_value = up_initial_value # Initial value to raise the leg up (cm)
             
             colors = ['r', 'b', 'y', 'm', 'g', 'c'] # Set of color for display
             
@@ -129,6 +130,7 @@ class Robot:
                     need,
                     srud,
                     udhr,
+                    up_initial_value, 
                     frm,
                     colors[n_leg])]
                 
@@ -175,7 +177,7 @@ class Robot:
     def ConcatenateAnglesAndPublish(self):
         for leg in self.Legs:
             AnglesMessage = np.array(leg.angles, dtype = np.float32)
-            time.sleep(0.002)
+            time.sleep(0.004)
             self.motor_publishers[leg.leg_id].publish(AnglesMessage)
 
     def PublishRobotData(self):

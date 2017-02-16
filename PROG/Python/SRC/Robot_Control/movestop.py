@@ -123,7 +123,7 @@ class Robot_control:
             command=CommandPosition()
             command.id=self.legs_motors_ids[numleg]
             command.angle=angles
-            command.speed=[min(2.,max(0.1,abs(angles[n_id] - self.AnglesDict[self.legs_motors_ids[numleg][n_id]])/self.Delta)) for n_id in range(3)]
+            command.speed=[min(1.5,max(0.3,0.95*abs(angles[n_id] - self.AnglesDict[self.legs_motors_ids[numleg][n_id]])/self.Delta)) for n_id in range(3)]
             self.publisher_legs.publish(command)
 
 R = Robot_control()

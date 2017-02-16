@@ -34,7 +34,7 @@ import matplotlib.pylab as pyl
 
 
 class Leg:
-    def __init__(self, leg_id, neighbours, fix_position, fix_angle, side, alpha_data, beta_data, gamma_data, x_repos, y_repos, h_repos, l1, l2, l3, landing, envy, need, speed_ratio, up_down_ratio, frm, color):
+    def __init__(self, leg_id, neighbours, fix_position, fix_angle, side, alpha_data, beta_data, gamma_data, x_repos, y_repos, h_repos, l1, l2, l3, landing, envy, need, speed_ratio, up_down_ratio, up_initial_value, frm, color):
         self.alphamin = alpha_data[0]
         self.alphamax = alpha_data[1]
 
@@ -79,6 +79,7 @@ class Leg:
         self.update_angles_from_position()
         self.absolute_feet_position = None
         self.h_up = self.h*up_down_ratio
+        self.up_initial_value = up_initial_value
         self.frm = frm
 
         self.R_repos = np.sqrt(x_repos**2+y_repos**2)
@@ -314,10 +315,11 @@ class Leg:
             N_points : number of points this flight should contain'''
         
         # First we look for the point to be aimed.
+        print self.relative_feet_position
         arrival = self.get_arrival_point(final_feet_point, final_orientation)
-        start = self.relative_feet_position
+        start = self.relative_feet_position+np.array([0., 0., self.up_initial_value])
 
-        self.flight = tools.flight(start, arrival, self.h_up, N_points)
+        self.flight = [self.relative_feet_position] + tools.flight(start, arrival, self.h_up, N_points)
         print "Final flight : {0} points for a distance of {1}, from {2} to {3}".format(len(self.flight), np.linalg.norm(arrival-start), start, arrival)
 
     def is_point_in_zone(self, point, zone_aimed):

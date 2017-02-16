@@ -123,14 +123,14 @@ def flight(I, F, h_up, n_points):
     L = R*thetamax
     print "Flight computation parameters : D = {0}, R = {1}, C = {2}, thetamax = {3}, L = {4}, n_points = {5}".format(D, R, C, thetamax, L, n_points)
     if comp_type != "none":
-        n_points_compensation = max(1,int(n_points*(height_compensation/(height_compensation + L))))
+        n_points_compensation = min(n_points - 4, max(1,3+int(n_points*(height_compensation/(height_compensation + L)))))
 
     points = [I]
-    if height_compensation == "first":
+    if comp_type == "first":
         points += [np.array([x,y,z]) for x,y,z in zip(np.linspace(I[0], Cstart[0], n_points_compensation), np.linspace(I[1], Cstart[1], n_points_compensation), np.linspace(I[2], Cstart[2], n_points_compensation))]
 
     u = np.cross(np.array([0,0,1]), (Cend-Cstart)/D)
-    for theta in np.linspace(0, thetamax, n_points - n_points_compensation):
+    for theta in np.linspace(0, thetamax, n_points - n_points_compensation)[1:]:
         c = np.cos(theta)
         s = np.sin(theta)
         rotation_matrix = np.array([[c + (1-c)*u[0]**2, u[0]*u[1]*(1-c) - u[2]*s, u[0]*u[2]*(1-c) + u[1]*s],
@@ -138,7 +138,7 @@ def flight(I, F, h_up, n_points):
                                     [u[0]*u[2]*(1-c) - u[1]*s, u[1]*u[2]*(1-c) + u[0]*s, c + (1-c)*u[2]**2]])
         points += [C + np.dot(rotation_matrix, (Cstart-C))]
 
-    if height_compensation == "last":
+    if comp_type == "last":
         points += [np.array([x,y,z]) for x,y,z in zip(np.linspace(Cend[0], F[0], n_points_compensation), np.linspace(Cend[1], F[1], n_points_compensation), np.linspace(Cend[2], F[2], n_points_compensation))]
 
     print "FInal flight generated : {0}".format(points)

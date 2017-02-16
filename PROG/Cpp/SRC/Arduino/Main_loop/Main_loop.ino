@@ -54,7 +54,7 @@ void loop()
   //pub_legs.publish(&legs_msg);
   
   // Taking care of sonars
-  if (((millis() - last_publish_sonars) > update_sonars_timeconstant_ms) && false)
+  if (((millis() - last_publish_sonars) > update_sonars_timeconstant_ms))
   {
     published = 1;
     // establish variables for duration of the ping,
