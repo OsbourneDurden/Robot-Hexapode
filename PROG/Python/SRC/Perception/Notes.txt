@@ -1,0 +1,5 @@
+Bon, ici deux fichiers, pour allumer les deux cameras et les balancer sur ROS. Donc évidemment tout ça doit être lancé sur le robot lui-même. 
+compute_cloud.py est le traitement d'image 3D. Mais loin d'être fini, si vous en voulez un je vous conseille d'en récupérer un qui marche. Même si nous on a jamais réussi à les faire marcher, c'est pour ça qu'on est partis là-dessus.
+
+Je m'étend pas plus, si besoin est, demandez moi plus d'infos, et l'algo est intégralement inspiré du cours de perception du M2.
+

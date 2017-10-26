@@ -1,0 +1,7 @@
+Bon en fait je viens de me rendre compte que mon code est relativement commenté.
+
+-> Le fichier principal est robot.py. Il gère l'algo en général, la communication avec ROS. Les calculs d'angles se font patte par pate via le fichier leg.py.
+-> Il y a également le fichier geometry.txt, qui est un fichier de config pour l'algo. Il contient des paramètres de vitesse, et des infos de geometrie du robot pour l'algo. 
+-> tools.py gère quelques calculs généraux, style des intersections de droites ou des trucs comme ça pour les calculs de trajectoire.
+
+-> Si besoin de plus de précisions, il faudait que je vous explique l'algo maintenant, mais pour votre truc je vous conseille vraiment de prendre un truc déjà fait et qui marche sur internet.

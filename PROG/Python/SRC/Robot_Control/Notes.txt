@@ -1,0 +1,19 @@
+Là, on est dans la partie qui permet de changer les commandes basique des mon algo, ou de la plupart des algos, en vraies données viables pour le robot.
+
+La fichier de config, qui est *très* important est angles.txt. C'est lui qui contient les valeurs des offsets des moteurs. Sans lui, le reste est inutile, puisque les moteurs iront pas au bon endroit. Toutes ces valeurs ont été trouvées expérimentalement, en utilisant un logiciel qui permet de connecter un moteur à l'ordi et avoir un retour des codeurs incrémentaux. Je saurais plus dire le nom de ce logiciel, mais il se trouve assez facilement (un programme python de mémoire, qq part sur GitHub. 
+Il y a  AO : AngleOffset
+        D : le sens dans lequel le moteur doit tourner le robot par rapport au référentiel utilisé. 
+        AC : Les valeurs minimales et maximales autorisées pour les moteurs. Ça permet d'étiter que les moteurs auto-détruisent les pattes du robot (et avec leur couple, ils pourraient le faire ... Ou au moins de détruire eux-mêmes).
+        ID : l'ID des moteurs, qui est en gros leur adresse physique, pour savoir à qui on envoie telle ou telle information. 
+Tout ça peut être retrouvé par le logiciel. Je ne suis pas sûr d'avoir les dernières valeurs, donc ne faites pas confiance à ces valeur là à l'aveugle si vous préférez être un peu safe.
+
+Maintenant le fichier movestop.py :
+
+Une classe importante : Robot_control.
+Pour faire bien, ce truc doit être lancé sur le robot lui-même.
+parsser récupère juste les valeurs dans angles.py.
+
+Ici c'est beaucoup plus simple : "python ./movestop.py" lance l'instance (à lancer donc sur le robot en ssh).
+
+Il récupère les valeurs envoyées par la commande (topic angles_raw_leg_X), et les transforme avec les angles précédents pour les envoyer sur /dxl/command_position.
+Il change les offset, les directions, et vérifie que les angles envoyés ont un sens et sont pas dangereux. Il vérifie également la commande actuelle (propre à mon algo) mais en gros, il envoie des angles seulement si il doit bien envoyer des angles, donc que le topic status n'est pas en "STOP" ou "ERROR".

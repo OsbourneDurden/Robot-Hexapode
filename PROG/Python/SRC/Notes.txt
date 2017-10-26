@@ -1,0 +1,6 @@
+5 dossiers ici :
+Algo_mouvement_Laurent est une vieille version de mon algo, outdatée. Inutile.
+Algo_mouvement_Laurent_V2 est la dernière version de mon algo. Si vous voulez l'utiliser c'est là. Il est super gros, et j'ai pas nécessairement le temps de bcp le commenter, je met un fichier Notes.txt histoire de s'y retrouver dedans
+IHM est l'interface ordinateur, pareil, un fichier Notes histoire de dire qui fait quoi
+Perception est pour tout ce qui a trait à la vision 3D. Elle était pas très très loin de marche, mais je sais pas si vous en aurez besoin
+Robot_control est pour tout ce qui est relié à la communication avec le robot pour les moteurs. Pareil, un Notes.txt

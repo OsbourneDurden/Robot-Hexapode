@@ -1,0 +1,19 @@
+Interface homme-machine qu'on a codé. Interfacée via ROS, elle est pour l'instant assez propre à mon algo, mais est assez facilement modifiable.
+
+-> Le fichier interface.py est inutile.
+-> Le fichier robot_animate est juste un plot de la structure 3D en fil de fer du robot, aucune interaction. Pas très utile mais ça résume un peu les transformations à faire.
+
+-> TOUT se trouve dans IMH.py, que je détaille ici :
+
+Si on lance "python ./IMH.py", il est sensé se lancer (si vous avez toutes les dépendances...).
+
+2 Classes dedans : GUI et ROSWorker. La première gère tout ce qui se passe dans la fenêtre. La seconde gère l'interaction avec ROS. Sachant que ROS est un process indépendant, les deux communiquent via des variable python communtes. ROSWorker est initié par GUI, et ROSWorker.WindowManager est le GUI. 
+Donc en gros, si on initie une action dans la fenêtre graphique, c'est une fonction de GUI.ROSWorker qui sera appelée pour communiquer avec le robot (exemple, ligne 250).
+À l'inverse, si des données arrivent sur le robot, elles sont récupérées par un CallBack démmaré sur ROSWorker (un Subscriber, par exemple ligne 387), qui va ensuite modifier les valeurs dans GUI (même exemple, ligne 419).
+
+Le reste est très majoritairement la création de la fenêtre 3D, a quelques exception près. Il y a notamment une chose qu'il faut connaitre sur ces trucs là. Je connais pas vos compétences en infomatique, donc je me permet de mettre ça là :
+
+ROSWorker est un thread (ou processus informatique) différent de la fenetre graphique, du fait qu'il doit répondre à des appels externes (les updates de données de ROS). Donc il ne peut pas lancer de lui-même certaines fonctions de cette fenêtre graphique. Notamment, il n'a pas la droit de changer l'image affichée de la camera dans la fenêtre graphique, vu qu'il n'est pas maître de cette fenêtre graphique. Il peut seulement changer les valeurs des variables.
+La solution que j'ai trouvé pour parer ça est d'utiliser la fonction Tk.after(), qui en gros, lance elle même des sous-process après un certain laps de temps. Dasn chaque fonction GUI.UpdateX (lancées lignes 181 à 187), on lance ces fonction une fois, et elle se lancent elles-mêmes (lignes 261, 266, ...). Ce qui fait que le GUI va lui même mettre à jour ce qui est affiché, avec les variable qui auront potentiellement été mises à jour par ROSWorker. Ok ?
+
+Pour le reste, je vous laisse analyser le truc, rien de bien compliqué, le gestionnaire de fenêtre utilisé (Tkinter) est un peu vieux mais extrêmement simple et très bien documenté, il devrait pas poser problème.

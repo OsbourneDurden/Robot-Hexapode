@@ -1,0 +1,2 @@
+Ici, seulement le fichier arduino, normalement celui qui est actuellement sur le robot. Pareil, il communique directement sur ROS. Sur le papier, il est sensé être bidirectionnel, donc également recevoir des commandes de ROS; mais on a jamais réussi à cause d'erreurs inexpliquées, c'est notamment pour ça que la commande de la LED est sur les RPi et pas sur l'arduino.
+Rien de difficile ici, on utilise une string pour balancer le statut des contacts au sol, a&a&a&a&a&a ave à chaque fois a = 1 ou 0 selon si c'est en contact ou non

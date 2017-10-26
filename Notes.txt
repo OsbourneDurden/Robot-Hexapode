@@ -1,0 +1,12 @@
+Hello,
+
+J'ai essayé de vous mettre un maximum de commentaires, notamment dans les trucs pertinents pour votre projet.
+Depuis ce dossier, y'a deux endroits où vous devez regarder :
+PROG/Python/SRC/
+PROG/Cpp/SRC/Arduino/
+
+Quelques trucs que je vous ai pas dit hier :
+    Quand on allume le robot, si tout est bien branché, les RPis ont des scripts d'allumage automatique, pour lancer tout seul les différents trucs qui sont sensés tourner dessus (donc certains des programmes que vous trouverez dans ces dossiers). Notamment ROS, puis les cameras, le script de communication avec les moteurs, le script de communication avec l'arduino (qui est pas dans les dossiers listés ici, c'est juste une ligne de commande à lancer de mémoire), ... 
+    Tout ça est lancé depuis le .bashrc du dossier personnel sur les RPis. Je les ai pas ici, parce qu'on les avait pas gitté, c'est donc pour ça que vous devez absolument sauver tout ce qu'il y a sur les cartes SD.
+    Aussi, les RPis communiquent par ethernet, avec des adresses IP fixes. On en a chié, mais regardez bien les fichiers de configuration réseau sur les cartes SD, vous en AUREZ besoin, c'est quasi certain.
+
